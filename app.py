@@ -14,8 +14,8 @@ LOCATION = "us-central1"
 PROJECT_ID = "gcpops-427012"
 MODEL_NAME = "gemini-1.5-flash-001"
 
-DATASET_ID = f"{PROJECT_ID}.gcp_data"
-TABLE_ID = f"{DATASET_ID}.revenue"
+DATASET_ID = f"{PROJECT_ID}.gcp_core"
+TABLE_ID = f"{DATASET_ID}.revenue-pull"
 
 def generate_prompt(query_description, data_schema):
     prompt = f"""
