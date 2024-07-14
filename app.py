@@ -14,7 +14,7 @@ LOCATION = "us-central1"
 PROJECT_ID = "gcpops-427012"
 MODEL_NAME = "gemini-1.5-flash-001"
 
-DATASET_ID = f"{PROJECT_ID}.gcp_core"
+DATASET_ID = f"{PROJECT_ID}.gcp_data"
 TABLE_ID = f"{DATASET_ID}.revenue"
 
 def generate_prompt(query_description, data_schema):
@@ -96,14 +96,14 @@ def get_dataset_schema(project_id, table_id):
 
 st.title(f"GCP Query")
 
-placeholder = st.empty()
-with placeholder:
-    with st.spinner(f"⏳ Setting up Project..."):
-        client = bigquery.Client(project=PROJECT_ID)
-        df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
-        DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
-        aiplatform.init(project=PROJECT_ID, location=LOCATION)
-placeholder.empty()
+# placeholder = st.empty()
+# with placeholder:
+#     with st.spinner(f"⏳ Setting up Project..."):
+client = bigquery.Client(project=PROJECT_ID)
+df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
+# DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
+# aiplatform.init(project=PROJECT_ID, location=LOCATION)
+# placeholder.empty()
 
 st.dataframe(data=df.head(), use_container_width=True)
 
