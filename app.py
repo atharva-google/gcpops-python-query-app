@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from google.cloud import bigquery
 from google.cloud import aiplatform
+from st_copy_to_clipboard import st_copy_to_clipboard
 from vertexai.preview.generative_models import GenerativeModel
 
 # ---------------------------------------------------------------------------------------------------------
@@ -90,20 +91,17 @@ def get_dataset_schema(project_id, table_id):
         data_schema += "\n    " + str(field.name) + ": " + str(field.description)
     return data_schema
 
+client = bigquery.Client(project=PROJECT_ID)
+df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
+
+DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+
 # ---------------------------------------------------------------------------------------------------------
 #                                             Streamlit UI
 # ---------------------------------------------------------------------------------------------------------
 
 st.title(f"GCP Query")
-
-placeholder = st.empty()
-with placeholder:
-    with st.spinner(f"⏳ Setting up Project..."):
-        client = bigquery.Client(project=PROJECT_ID)
-        df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
-        DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
-        aiplatform.init(project=PROJECT_ID, location=LOCATION)
-placeholder.empty()
 
 if question := st.chat_input("Ask a question"):
     with st.chat_message("user"):
@@ -118,8 +116,6 @@ if question := st.chat_input("Ask a question"):
             result_tsv = data_to_tsv(result)
 
             with st.chat_message("assistant"):
-                st.code(str(model_code).strip(), language="python")
-                
                 if len(result) > 20:
                     st.dataframe(data=result, use_container_width=True, height=400)
                     st.info(f"Complete output has {len(result)} rows", icon="ℹ️")
