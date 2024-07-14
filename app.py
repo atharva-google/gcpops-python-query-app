@@ -102,15 +102,16 @@ with placeholder:
     with st.spinner(f"⏳ Setting up Project..."):
         aiplatform.init(project=PROJECT_ID, location=LOCATION)
 
-        bpd.options.bigquery.location = LOCATION
-        bpd.options.bigquery.project = PROJECT_ID
+        # bpd.options.bigquery.location = LOCATION
+        # bpd.options.bigquery.project = PROJECT_ID
 
-        df = bpd.read_gbq(TABLE_ID).to_pandas()
-        bpd.close_session()
+        # df = bpd.read_gbq(TABLE_ID).to_pandas()
+        # bpd.close_session()
 
         DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
 placeholder.empty()
 
+st.code(DATA_SCHEMA)
 if question := st.chat_input("Ask a question"):
     with st.chat_message("user"):
         st.markdown(question)
