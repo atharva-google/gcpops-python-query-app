@@ -1,6 +1,5 @@
 pandas
 streamlit
-bigframes
 st-copy-to-clipboard
 google-cloud-bigquery
 google-cloud-aiplatform

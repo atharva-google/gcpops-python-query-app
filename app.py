@@ -2,7 +2,6 @@ import re
 import time
 import pandas as pd
 import streamlit as st
-import bigframes.pandas as bpd
 from google.cloud import bigquery
 from google.cloud import aiplatform
 from vertexai.preview.generative_models import GenerativeModel
@@ -17,15 +16,6 @@ MODEL_NAME = "gemini-1.5-flash-001"
 
 DATASET_ID = f"{PROJECT_ID}.gcp_core"
 TABLE_ID = f"{DATASET_ID}.revenue"
-
-def get_dataset_schema(project_id, table_id):
-    client = bigquery.Client(project=project_id)
-    table_ref = client.get_table(TABLE_ID)
-
-    data_schema = "COLUMN NAMES and DESCRIPTION:"
-    for field in table_ref.schema:
-        data_schema += "\n    " + str(field.name) + ": " + str(field.description)
-    return data_schema
 
 def generate_prompt(query_description, data_schema):
     prompt = f"""
@@ -91,6 +81,15 @@ def data_to_tsv(df):
         tsv_data += "\t".join(row) + "\n"
     return tsv_data
 
+def get_dataset_schema(project_id, table_id):
+    client = bigquery.Client(project=project_id)
+    table_ref = client.get_table(TABLE_ID)
+
+    data_schema = "COLUMN NAMES and DESCRIPTION:"
+    for field in table_ref.schema:
+        data_schema += "\n    " + str(field.name) + ": " + str(field.description)
+    return data_schema
+
 # ---------------------------------------------------------------------------------------------------------
 #                                             Streamlit UI
 # ---------------------------------------------------------------------------------------------------------
@@ -100,43 +99,39 @@ st.title(f"GCP Query")
 placeholder = st.empty()
 with placeholder:
     with st.spinner(f"⏳ Setting up Project..."):
-        aiplatform.init(project=PROJECT_ID, location=LOCATION)
-
-        # bpd.options.bigquery.location = LOCATION
-        # bpd.options.bigquery.project = PROJECT_ID
-
-        # df = bpd.read_gbq(TABLE_ID).to_pandas()
-        # bpd.close_session()
-
+        client = bigquery.Client(project=PROJECT_ID)
+        df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
         DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
+        aiplatform.init(project=PROJECT_ID, location=LOCATION)
 placeholder.empty()
 
-st.code(DATA_SCHEMA)
-if question := st.chat_input("Ask a question"):
-    with st.chat_message("user"):
-        st.markdown(question)
-    st.session_state.messages.append({"role": "user", "content": question})
+st.dataframe(data=df.head(), use_container_width=True)
 
-    prompt = generate_prompt(question, DATA_SCHEMA)
-    try:
-        model_code = get_model_response(prompt)
+# if question := st.chat_input("Ask a question"):
+#     with st.chat_message("user"):
+#         st.markdown(question)
+#     st.session_state.messages.append({"role": "user", "content": question})
+
+#     prompt = generate_prompt(question, DATA_SCHEMA)
+#     try:
+#         model_code = get_model_response(prompt)
         
-        result = None
-        try:
-            exec(model_code, globals())
-        except Exception as e:
-            print(e)
-        result_tsv = data_to_tsv(result)
+#         result = None
+#         try:
+#             exec(model_code, globals())
+#         except Exception as e:
+#             print(e)
+#         result_tsv = data_to_tsv(result)
 
-        with st.chat_message("assistant"):
-            st.code(str(model_code).strip(), language="python")
+#         with st.chat_message("assistant"):
+#             st.code(str(model_code).strip(), language="python")
             
-            if len(result) > 20:
-                st.dataframe(data=result, use_container_width=True, height=400)
-                st.info(f"Complete output has {len(result)} rows", icon="ℹ️")
-            else:
-                st.dataframe(data=result, use_container_width=True)
+#             if len(result) > 20:
+#                 st.dataframe(data=result, use_container_width=True, height=400)
+#                 st.info(f"Complete output has {len(result)} rows", icon="ℹ️")
+#             else:
+#                 st.dataframe(data=result, use_container_width=True)
 
-            st_copy_to_clipboard(text=result_tsv, before_copy_label="📋 copy data", after_copy_label="✅ copied data")
-    except:
-        st.error("Error getting query from model", icon="🤖")
+#             st_copy_to_clipboard(text=result_tsv, before_copy_label="📋 copy data", after_copy_label="✅ copied data")
+#     except:
+#         st.error("Error getting query from model", icon="🤖")
