@@ -18,6 +18,8 @@ MODEL_NAME = "gemini-1.5-flash-001"
 DATASET_ID = f"{PROJECT_ID}.gcp_core"
 TABLE_ID = f"{DATASET_ID}.revenue"
 
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+
 def generate_prompt(query_description, data_schema):
     prompt = f"""
 Given a natural language question in English about a Pandas DataFrame df, write well-documented Python code that retrieves the relevant information and returns a new DataFrame named result. The code should:
@@ -91,11 +93,14 @@ def get_dataset_schema(project_id, table_id):
         data_schema += "\n    " + str(field.name) + ": " + str(field.description)
     return data_schema
 
-client = bigquery.Client(project=PROJECT_ID)
-df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
-
-DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
-aiplatform.init(project=PROJECT_ID, location=LOCATION)
+@st.cache_resource
+def initialize():
+    client = bigquery.Client(project=PROJECT_ID)
+    df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
+    DATA_SCHEMA = get_dataset_schema(PROJECT_ID, TABLE_ID)
+    return client, df, DATA_SCHEMA
+    
+client, df, DATA_SCHEMA = initialize()
 
 # ---------------------------------------------------------------------------------------------------------
 #                                             Streamlit UI
@@ -111,6 +116,8 @@ if question := st.chat_input("Ask a question"):
         prompt = generate_prompt(question, DATA_SCHEMA)
         model_code = get_model_response(prompt)
         try:
+            st.code(str(model_code).strip(), language="python")
+
             result = None
             exec(model_code, globals())
             result_tsv = data_to_tsv(result)
