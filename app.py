@@ -15,7 +15,7 @@ PROJECT_ID = "gcpops-427012"
 MODEL_NAME = "gemini-1.5-flash-001"
 
 DATASET_ID = f"{PROJECT_ID}.gcp_core"
-TABLE_ID = f"{DATASET_ID}.revenue-pull"
+TABLE_ID = f"{DATASET_ID}.rev"
 
 def generate_prompt(query_description, data_schema):
     prompt = f"""
