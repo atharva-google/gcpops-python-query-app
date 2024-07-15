@@ -1,6 +1,5 @@
 pandas
 db-dtypes
 streamlit
-st-copy-to-clipboard
 google-cloud-aiplatform
 google-cloud-bigquery[pandas]
