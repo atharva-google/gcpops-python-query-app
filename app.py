@@ -1,4 +1,5 @@
 import re
+import math
 import time
 import datetime
 import pandas as pd
@@ -19,7 +20,7 @@ MODEL_NAME = "gemini-1.5-flash-001"
 DATASET_ID = f"{PROJECT_ID}.gcp_core"
 TABLE_ID = f"{DATASET_ID}.revenue"
 
-def generate_prompt(query_description, data_schema):
+def generate_prompt(query_description):
     prompt = f"""
 Given a natural language question in English about a Pandas DataFrame `df`, write Python code that retrieves the relevant information and returns a new DataFrame named `result`
 
@@ -33,7 +34,7 @@ INSTRUCTIONS:
     - Utilize KNOWLEDGE and FORMULAS.
 
 DATAFRAME COLUMNS:
-{data_schema}
+{DATA_SCHEMA}
 
 KNOWLEDGE:
     a. CURRENT DATE: {DAY} {MONTH} {YEAR}
@@ -116,7 +117,7 @@ if question := st.chat_input("Ask a question"):
         st.markdown(question)
 
     try:
-        prompt = generate_prompt(question, DATA_SCHEMA)
+        prompt = generate_prompt(question)
         model_code = get_model_response(prompt)
 
         try:
