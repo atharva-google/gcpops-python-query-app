@@ -20,6 +20,29 @@ MODEL_NAME = "gemini-1.5-flash-001"
 DATASET_ID = f"{PROJECT_ID}.gcp_core"
 TABLE_ID = f"{DATASET_ID}.revenue"
 
+@st.cache_resource
+def initialize():
+    client = bigquery.Client(project=PROJECT_ID)
+    table_ref = client.get_table(TABLE_ID)
+    data_schema = "COLUMN NAMES and DESCRIPTION:"
+    for field in table_ref.schema:
+        data_schema += "\n    " + str(field.name) + ": " + str(field.description)
+    df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
+    return df, data_schema
+
+@st.cache_data
+def initialize_date():
+    now = datetime.datetime.now()
+    DAY = now.day
+    MONTH = now.strftime("%B")
+    YEAR = now.year
+    QUARTER = f"Q{math.ceil(now.month / 3)}"
+    return DAY, MONTH, YEAR, QUARTER
+    
+df, DATA_SCHEMA = initialize()
+DAY, MONTH, YEAR, QUARTER = initialize_date()
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+
 def generate_prompt(query_description):
     prompt = f"""
 Given a natural language question in English about a Pandas DataFrame df, write well-documented Python code that retrieves the relevant information and returns a new DataFrame named result
@@ -34,7 +57,7 @@ INSTRUCTIONS:
     - Utilize DATAFRAME COLUMNS, KNOWLEDGE, and FORMULAS.
 
 DATAFRAME COLUMNS:
-{data_schema}
+{DATA_SCHEMA}
 
 KNOWLEDGE:
     a. CURRENT DATE: {DAY} {MONTH} {YEAR}
@@ -87,29 +110,6 @@ def data_to_tsv(df):
     for row in df:
         tsv_data += "\t".join(row) + "\n"
     return tsv_data
-
-@st.cache_data
-def initialize_date():
-    now = datetime.datetime.now()
-    DAY = now.day
-    MONTH = now.strftime("%B")
-    YEAR = now.year
-    QUARTER = f"Q{math.ceil(now.month / 3)}"
-    return DAY, MONTH, YEAR, QUARTER
-
-@st.cache_resource
-def initialize():
-    client = bigquery.Client(project=PROJECT_ID)
-    table_ref = client.get_table(TABLE_ID)
-    data_schema = "COLUMN NAMES and DESCRIPTION:"
-    for field in table_ref.schema:
-        data_schema += "\n    " + str(field.name) + ": " + str(field.description)
-    df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
-    return df, data_schema
-    
-df, DATA_SCHEMA = initialize()
-DAY, MONTH, YEAR, QUARTER = initialize_date()
-aiplatform.init(project=PROJECT_ID, location=LOCATION)
 
 # ---------------------------------------------------------------------------------------------------------
 #                                             Streamlit UI
