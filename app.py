@@ -41,6 +41,11 @@ KNOWLEDGE:
     b. CURRENT QUARTER: {QUARTER}
     b. STARTING DATE of the dataset is January 1 2023.
     c. ENDING DATE of the dataset is December 31, 2024.
+    d. Quarter Breakup:
+        Q1: January to March 
+        Q2: April to June
+        Q3: July to September
+        Q4: October to December
     
 FORMULAS:
     a. Promotion (Promo) Credits = Gross Revenue - Net Revenue
