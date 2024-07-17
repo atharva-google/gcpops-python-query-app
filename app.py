@@ -22,31 +22,31 @@ TABLE_ID = f"{DATASET_ID}.revenue"
 
 def generate_prompt(query_description):
     prompt = f"""
-Given a natural language question in English about a Pandas DataFrame `df`, write Python code that retrieves the relevant information and returns a new DataFrame named `result`
+Given a natural language question in English about a Pandas DataFrame df, write well-documented Python code that retrieves the relevant information and returns a new DataFrame named result
 
 INSTRUCTIONS:
-    - Do not modify the original DataFrame `df`, create a DataFrame named `result` to hold any calculations or manipulations.
+    - Do not modify the original DataFrame `df`, create a temporary DataFrame named `result` to hold any calculations or manipulations.
     - Always return a DataFrame object even if the code results in no data, return an empty DataFrame named `result`.
     - Include `reporting id` and `account name` columns by default, only omit them if absolutely unnecessary for the output.
     - Do not return irrelevant columns that would slow down code execution.
+    - Use proper column names based on the dataframe schema.
     - Use any Python DataFrame functions or operators as necessary to retrieve the desired information.
-    - Use proper column names, refer to DATAFRAME COLUMNS.
-    - Utilize KNOWLEDGE and FORMULAS.
+    - Utilize DATAFRAME COLUMNS, KNOWLEDGE, and FORMULAS.
 
 DATAFRAME COLUMNS:
-{DATA_SCHEMA}
+{data_schema}
 
 KNOWLEDGE:
     a. CURRENT DATE: {DAY} {MONTH} {YEAR}
-    b. CURRENT QUARTER: {QUARTER}
+    b. CURRENT QUARTER: {YEAR}-{QUARTER}
     b. STARTING DATE of the dataset is January 1 2023.
     c. ENDING DATE of the dataset is December 31, 2024.
     d. Quarter Breakup:
-        Q1: January to March 
-        Q2: April to June
-        Q3: July to September
-        Q4: October to December
-    
+        Quarter 1 (Q1) = Jan 1 - Mar 31
+        Quarter 2 (Q2) = Apr 1 - Jun 30
+        Quarter 3 (Q3) = Jul 1 - Sep 30
+        Quarter 4 (Q4) = Oct 1 - Dec 31
+
 FORMULAS:
     a. Promotion (Promo) Credits = Gross Revenue - Net Revenue
     b. Daily Run Rate (DRR) =
