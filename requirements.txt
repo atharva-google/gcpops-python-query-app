@@ -1,5 +1,7 @@
 pandas
+chromadb
 db-dtypes
 streamlit
+sentence-transformers
 google-cloud-aiplatform
 google-cloud-bigquery[pandas]
