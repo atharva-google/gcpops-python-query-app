@@ -1,6 +1,7 @@
 import re
 import math
 import time
+import calendar 
 import chromadb
 import datetime
 import pandas as pd
@@ -24,7 +25,9 @@ class CustomEmbeddingFunction(EmbeddingFunction[Documents]):
 def initialize_formulas():
     NOW = datetime.datetime.now()
     YEAR = NOW.year
+    MONTH = NOW.month
     QUARTER = math.ceil(NOW.month / 3)
+    DAYS_REMAINING = (datetime.date(YEAR, 12, 31) - datetime.date.today()).days
 
     START_DATE = "Jan 2023"
     END_DATE = "Dec 2024"
@@ -37,12 +40,21 @@ def initialize_formulas():
         "Monthly Run Rate (MRR)": "Last 90 days revenue / 3 ",
         "Monthly Run Rate (MRR) of a requested `MONTH`": "Last 3 months revenue from `MONTH` / 3 (eg: March 2024 MRR = ([january 2024] + [february 2024] + [march 2024]) / 3)",
 
-        "Annual Run Rate (ARR)": f"total {YEAR}-Q{QUARTER-1} revenue * 4",
-        "Incremental Run Rate (IRR)": f"total {YEAR}-Q{QUARTER-1} revenue * 4 - total {YEAR-1}-Q4 revenue * 4",
+        "Annual Run Rate (ARR)": f"(total {YEAR} quarter {QUARTER-1} revenue) * 4",
+        "Incremental Run Rate (IRR)": f"(total {YEAR} quarter {QUARTER-1} revenue) * 4 - (total {YEAR-1} quarter 4 revenue) * 4",
+        
+        "Projected revenue": f"(total {YEAR} revenue) + (last `N` days revenue / `N`) * {DAYS_REMAINING}",
 
-        "Criteria to get accounts that started billing/revenue IN the last `N` days": f"([Total revenue from {START_DATE} to {END_DATE}] - [current last `N` days revenue]) <= 0 AND [current last `N` days revenue] > 0",
-        "Criteria to get accounts that started billing/revenue IN or DURING a `MONTH`": f"([Total revenue from {START_DATE} to `MONTH`]) <= 0 AND [`MONTH` revenue] > 0",
-        "Criteria to get accounts that started billing/revenue AFTER a `MONTH`": f"([Total Revenue from {START_DATE} to `MONTH`]) <= 0 AND [Total Revenue from requested `MONTH` to {END_DATE}] > 0"
+        "H1 growth": f"(total Jan {YEAR} to Jun {YEAR}  revenue) - (total Jan {YEAR-1} to Jun {YEAR-1} revenue)",
+        "H2 growth": f"(total Jul {YEAR} to Dec {YEAR}  revenue) - (total Jul {YEAR-1} to Dec {YEAR-1} revenue)",
+        "Year on Year (YoY) growth": f"(total {YEAR-1} revenue) - (total {YEAR} revenue)",
+        "Month on Month (MoM) growth": f"({calendar.month_name[MONTH-2]} {YEAR} revenue) - ({calendar.month_name[MONTH-1]} {YEAR} revenue)",
+
+        "New Billers": f"(total {YEAR-1} revenue) < 0 AND (total {YEAR} revenue) > 1",
+
+        "Started billing/revenue IN the last `N` days": f"([Total revenue from {START_DATE} to {END_DATE}] - [current last `N` days revenue]) <= 0 AND [current last `N` days revenue] > 0",
+        "Started billing/revenue IN or DURING a `MONTH`": f"([Total revenue from {START_DATE} to `MONTH`]) <= 0 AND [`MONTH` revenue] > 0",
+        "Started billing/revenue AFTER a `MONTH`": f"([Total Revenue from {START_DATE} to `MONTH`]) <= 0 AND [Total Revenue from requested `MONTH` to {END_DATE}] > 0"
     }
 
     return formula_map
@@ -69,7 +81,7 @@ MODEL_NAME = "gemini-1.5-flash-001"
 DATASET_ID = f"{PROJECT_ID}.gcp_core"
 TABLE_ID = f"{DATASET_ID}.revenue"
 
-N_FORMULAS = 3
+N_FORMULAS = 4
 CHROMA_NAME = "formulas"
 CHROMA_PATH = "./chroma_db"
 
@@ -83,10 +95,11 @@ aiplatform.init(project=PROJECT_ID, location=LOCATION)
 # ---------------------------------------------------------------------------------------------------------
 
 def generate_prompt(query_description, relevant_formulas):
-    prompt = f"""Given a natural language question in English, write a simple Python code that retrieves the relevant information from Pandas DataFrame `df` and returns a new DataFrame named `result`.
+    prompt = f"""Given a natural language question in English, write Python code that retrieves the relevant information from Pandas DataFrame `df` and returns a new DataFrame named `result`.
+Write a basic code, do not use any unnecessary pandas functions or methods.
 Include `reporting id` and `account name` columns by default, only omit them if absolutely unnecessary for the output.
+Do not include any unwanted columns in the `result`.
 Use proper column names based on the dataframe schema.
-Make sure the python code is executable.
 Utilize DATAFRAME COLUMNS and FORMULAS to write code.
 
 # start DATAFRAME COLUMNS #
