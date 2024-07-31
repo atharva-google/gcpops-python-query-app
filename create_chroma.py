@@ -20,7 +20,7 @@ FORMULA_MAP = {
 
     "Forecast/Projected revenue": f"(total {YEAR} revenue) + (last `N` days revenue / `N`) * {DAYS_REMAINING}",
 
-    # "new billers IN or DURING a `MONTH`": f"([total revenue from {START_DATE} to `MONTH`]) <= 0 AND [`MONTH` revenue] > 0",
+    "new billers": f"(total {YEAR-1} revenue) < 0 AND (total {YEAR} revenue) > 1",
     "new billers IN `time_period`":  f"(total revenue from {START_DATE} to `time_period`) <= 0 AND (total revenue in `time_period`) >= 1",
     "new billers IN the last `N` days": f"([total revenue from {START_DATE} to {END_DATE}] - [{YEAR} last `N` days revenue]) <= 0 AND [{YEAR} last `N` days revenue] > 0",
 }
