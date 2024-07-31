@@ -13,20 +13,16 @@ FORMULA_MAP = {
     "Monthly Run Rate (MRR)": "Last 90 days revenue / 3 OR Last 3 months revenue from `MONTH` / 3 (eg: March 2024 MRR = ([january 2024] + [february 2024] + [march 2024]) / 3)",
 
     "Annual Run Rate (ARR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4",
-    "Incremental Run Rate (IRR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4 - (total {YEAR-1} Q4 revenue) * 4",
+    "Incremental Run Rate (Inc ARR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4 - (total {YEAR-1} Q4 revenue) * 4",
+
+    "Year on Year (YoY)": f"(total {YEAR-1} revenue) - (total {YEAR} revenue)",
+    "Month on Month (MoM)": f"({calendar.month_name[MONTH-2]} {YEAR} revenue) - ({calendar.month_name[MONTH-1]} {YEAR} revenue)",
 
     "Forecast/Projected revenue": f"(total {YEAR} revenue) + (last `N` days revenue / `N`) * {DAYS_REMAINING}",
 
-    "H1 growth": f"(total 01 {YEAR} to 06 {YEAR} revenue) - (total 01 {YEAR-1} to 06 {YEAR-1} revenue)",
-    "H2 growth": f"(total 07 {YEAR} to 12 {YEAR} revenue) - (total 07 {YEAR-1} to 12 {YEAR-1} revenue)",
-    "Year on Year (YoY) growth": f"(total {YEAR-1} revenue) - (total {YEAR} revenue)",
-    "Month on Month (MoM) growth": f"({calendar.month_name[MONTH-2]} {YEAR} revenue) - ({calendar.month_name[MONTH-1]} {YEAR} revenue)",
-
-    "New Billers": f"(total {YEAR-1} revenue) < 0 AND (total {YEAR} revenue) > 1",
-
-    "Started billing/revenue IN the last `N` days": f"([total revenue from {START_DATE} to {END_DATE}] - [last `N` days revenue]) <= 0 AND [current last `N` days revenue] > 0",
-    "Started billing/revenue IN or DURING a `MONTH`": f"([total revenue from {START_DATE} to `MONTH`]) <= 0 AND [`MONTH` revenue] > 0",
-    "Started billing/revenue AFTER a `MONTH`": f"([total Revenue from {START_DATE} to `MONTH`]) <= 0 AND [Total Revenue from requested `MONTH` to {END_DATE}] > 0"
+    # "new billers IN or DURING a `MONTH`": f"([total revenue from {START_DATE} to `MONTH`]) <= 0 AND [`MONTH` revenue] > 0",
+    "new billers IN `time_period`":  f"(total revenue from {START_DATE} to `time_period`) <= 0 AND (total revenue in `time_period`) >= 1",
+    "new billers IN the last `N` days": f"([total revenue from {START_DATE} to {END_DATE}] - [{YEAR} last `N` days revenue]) <= 0 AND [{YEAR} last `N` days revenue] > 0",
 }
 
 CHROMA_NAME = "formulas"

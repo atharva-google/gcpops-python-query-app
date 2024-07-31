@@ -38,20 +38,16 @@ def initialize_formulas():
         "Monthly Run Rate (MRR)": "Last 90 days revenue / 3 OR Last 3 months revenue from `MONTH` / 3 (eg: March 2024 MRR = ([january 2024] + [february 2024] + [march 2024]) / 3)",
 
         "Annual Run Rate (ARR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4",
-        "Incremental Run Rate (IRR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4 - (total {YEAR-1} Q4 revenue) * 4",
+        "Incremental Run Rate (Inc ARR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4 - (total {YEAR-1} Q4 revenue) * 4",
+
+        "Year on Year (YoY)": f"(total {YEAR-1} revenue) - (total {YEAR} revenue)",
+        "Month on Month (MoM)": f"({calendar.month_name[MONTH-2]} {YEAR} revenue) - ({calendar.month_name[MONTH-1]} {YEAR} revenue)",
 
         "Forecast/Projected revenue": f"(total {YEAR} revenue) + (last `N` days revenue / `N`) * {DAYS_REMAINING}",
 
-        "H1 growth": f"(total 01 {YEAR} to 06 {YEAR} revenue) - (total 01 {YEAR-1} to 06 {YEAR-1} revenue)",
-        "H2 growth": f"(total 07 {YEAR} to 12 {YEAR} revenue) - (total 07 {YEAR-1} to 12 {YEAR-1} revenue)",
-        "Year on Year (YoY) growth": f"(total {YEAR-1} revenue) - (total {YEAR} revenue)",
-        "Month on Month (MoM) growth": f"({calendar.month_name[MONTH-2]} {YEAR} revenue) - ({calendar.month_name[MONTH-1]} {YEAR} revenue)",
-
-        "New Billers": f"(total {YEAR-1} revenue) < 0 AND (total {YEAR} revenue) > 1",
-
-        "Started billing/revenue IN the last `N` days": f"([total revenue from {START_DATE} to {END_DATE}] - [last `N` days revenue]) <= 0 AND [current last `N` days revenue] > 0",
-        "Started billing/revenue IN or DURING a `MONTH`": f"([total revenue from {START_DATE} to `MONTH`]) <= 0 AND [`MONTH` revenue] > 0",
-        "Started billing/revenue AFTER a `MONTH`": f"([total Revenue from {START_DATE} to `MONTH`]) <= 0 AND [Total Revenue from requested `MONTH` to {END_DATE}] > 0"
+        # "new billers IN or DURING a `MONTH`": f"([total revenue from {START_DATE} to `MONTH`]) <= 0 AND [`MONTH` revenue] > 0",
+        "new billers IN `time_period`":  f"(total revenue from {START_DATE} to `time_period`) <= 0 AND (total revenue in `time_period`) >= 1",
+        "new billers IN the last `N` days": f"([total revenue from {START_DATE} to {END_DATE}] - [{YEAR} last `N` days revenue]) <= 0 AND [{YEAR} last `N` days revenue] > 0",
     }
 
     return formula_map
@@ -91,8 +87,8 @@ aiplatform.init(project=PROJECT_ID, location=LOCATION)
 # ---------------------------------------------------------------------------------------------------------
 
 def generate_prompt(query_description, relevant_formulas):
-    prompt = f"""Given a question, write Python code that retrieves the relevant information from Pandas DataFrame `df` and returns a new DataFrame `result`.
-Write a simple code without any pandas sort, groupby, or aggregate functions unless absolutely necessary.
+    prompt = f"""Given a question, write Python code that retrieves information from Pandas DataFrame `df` and returns new DataFrame `result`.
+Write a simple executable code, avoid using complex pandas functions.
 Utilize COLUMNS & FORMULAS to write code.
 
 # start COLUMNS #
@@ -114,7 +110,7 @@ gross_l[N]_[year]: Gross Revenue of last N days (N=7,14,90 & year=2023,2024)
 {relevant_formulas}
 # end FORMULAS #
 
-Write Python code without any additional text for: {query_description}"""
+Write code without additional text for: {query_description}"""
 
     return prompt
 
@@ -171,13 +167,14 @@ if question := st.chat_input("Ask a question"):
             st.dataframe(data=result, use_container_width=True, height=400)
             if len(result) > 20:
                 st.info(f"Complete output has {len(result)} rows", icon="ℹ️")
+
             # result_tsv = data_to_tsv(result)
             # st_copy_to_clipboard(text="result_tsv", before_copy_label="📋 copy data", after_copy_label="✅ copied data")
 
             if PLOT_COLS and PRESENT_COLS:
                 st.bar_chart(result.sort_values([PLOT_COLS[-1]], ascending=False).head(15), x=PRESENT_COLS[0], y=PLOT_COLS[-1])
             else:
-                st.warning('The data could not be plotted', icon="⚠️")
+                st.warning('The data cannot not be plotted', icon="⚠️")
         except Exception as e:
             st.exception(f"Trouble executing query!\n\n{e}")
     except Exception as e:
