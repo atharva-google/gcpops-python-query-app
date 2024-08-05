@@ -289,7 +289,7 @@ aiplatform.init(project=PROJECT_ID, location=LOCATION)
 def initialize_data():
     client = bigquery.Client(project=PROJECT_ID)
     df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
-    df_cols = DF.columns.tolist()
+    df_cols = df.columns.tolist()
     return df, df_cols
 
 ## UNCOMMENT
