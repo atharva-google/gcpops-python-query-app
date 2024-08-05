@@ -8,9 +8,12 @@ import pandas as pd
 import streamlit as st
 from google.cloud import bigquery
 from google.cloud import aiplatform
+from copy_to_clipboard import st_copy_to_clipboard
 from sentence_transformers import SentenceTransformer
 from chromadb import Documents, Embeddings, EmbeddingFunction
 from vertexai.preview.generative_models import GenerativeModel
+
+st.set_page_config(page_icon="🔦", page_title="Blitz Query")
 
 # ---------------------------------------------------------------------------------------------------------
 #                                             Base Functions
@@ -536,13 +539,17 @@ def apply_model_filters(df, model_filters, new_cols):
 
     return df
 
-def data_to_csv(df):
+def data_to_sv(df, n_csv_rows=10):
+    tsv_data = "\t".join(list(df.columns)) + "\n"
     csv_data = ",".join(list(df.columns)) + "\n"
     df = df.astype(str)
     df = df.values.tolist()
     for row in df:
-        csv_data += ",".join(row) + "\n"
-    return csv_data
+        tsv_data += "\t".join(row) + "\n"
+        if n_csv_rows >= 0:
+            csv_data += ",".join(row) + "\n"
+            n_csv_rows -= 1
+    return csv_data, tsv_data
 
 def get_new_cols(df_columns):
     new_cols = []
@@ -556,56 +563,64 @@ def get_new_cols(df_columns):
 # ---------------------------------------------------------------------------------------------------------
 
 st.title(f"Blitz 🚀")
+analysis_tab, data_tab, graph_tab = st.tabs(["🔍 Analysis", "🗃 Data", "📈 Graph"])
+
 if question := st.chat_input("Ask a question"):
     with st.chat_message("user"):
         st.markdown(question)
 
+    data_toast = st.toast("🌱 Starting Data Retrieval")
     relevant_formulas = CHROMA_DB.query(query_texts=[question], n_results=N_RESULTS)["documents"][0]
     prompt = generate_func_prompt(question, relevant_formulas)
-
-    result = DF.copy()
     model_functions = get_model_response(prompt)
+    data_toast.toast("⚙️ Got Data Functions!")
+    
     try:
         model_functions = parse_json(model_functions)
+        result = DF.copy()
+        result = execute_model_functions(result, model_functions)
+        data_toast.toast("📐 Completed Function Execution")
+        
+        new_cols = get_new_cols(result.columns.tolist())
+        prompt = generate_filter_prompt(question, new_cols)
+        model_filters = get_model_response(prompt)
+        data_toast.toast("🧹 Got Data Filters")
+
+        try:
+            model_filters = parse_json(model_filters)
+            result = apply_model_filters(result, model_filters, new_cols)
+
+            with data_tab:
+                st.dataframe(data=result, use_container_width=True)
+                data_toast.toast("🗃 Data Displayed")
+                result_csv, result_tsv = data_to_sv(result)
+                st_copy_to_clipboard(result_tsv, "📋 Copy Data", "✅ Data Copied")
+
+            summary_toast = st.toast("🌱 Starting Summary Retrieval")
+            prompt = generate_summary_prompt(question, result_csv)
+            model_summary = get_model_response(prompt)
+            try:
+                model_summary = parse_json(model_summary)
+                plot = model_summary["plot"]
+                analysis = model_summary["analysis"]
+                summary_toast = st.toast("🔍 Summary and Plot Displayed")
+
+                with analysis_tab:
+                    st.write(analysis)
+
+                with graph_tab:
+                    if plot["type"] == "bar":
+                        st.bar_chart(result.head(10), x=plot["x"], y=plot["y"])
+                    elif plot["type"] == "line":
+                        st.line_chart(result.head(10), x=plot["x"], y=plot["y"])
+                    else:
+                        st.warning("No plot available!")
+            except Exception as e:
+                st.warning(model_summary)
+                st.exception(e)
+        except Exception as e:
+            st.warning(model_filters)
+            st.exception(e)
     except Exception as e:
-        st.error(model_functions)
+        st.warning(model_functions)
         st.exception(e)
-    result = execute_model_functions(result, model_functions)
-
-    new_cols = get_new_cols(result.columns.tolist())
-    prompt = generate_filter_prompt(question, new_cols)
-
-    model_filters = get_model_response(prompt)
-    try:
-        model_filters = parse_json(model_filters)
-    except Exception as e:
-        st.error(model_filters)
-        st.exception(e)
-    result = apply_model_filters(result, model_filters, new_cols)
-
-    result_csv = data_to_csv(result.head(10))
-    prompt = generate_summary_prompt(question, result_csv)
-    model_summary = get_model_response(prompt)
-    try:
-        model_summary = parse_json(model_summary)
-    except Exception as e:
-        st.error(model_summary)
-        st.exception(e)
-
-    with st.expander(label="Data", expanded=False):
-        st.dataframe(data=result, use_container_width=True)
-
-    try:
-        plot = model_summary["plot"]
-        with st.expander(label="Graph", expanded=True):
-            if plot["type"] == "bar":
-                st.bar_chart(result.head(10), x=plot["x"], y=plot["y"])
-            elif plot["type"] == "line":
-                st.line_chart(result.head(10), x=plot["x"], y=plot["y"])
-            else:
-                st.warning("No plot available!")
-    except:
-        st.warning("No plot available!")
-
-    st.subheader("Summary")
-    st.write(model_summary["summary"])
