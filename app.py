@@ -370,7 +370,7 @@ gross_l[N]_[year]: Gross Revenue of last N days (N=7,14,90)
     "sort": {{
         "cols": [columns], 
         "order": asc or desc
-    }}
+    }},
     "limit": number of rows
 }}
 # end FORMAT #
@@ -381,10 +381,9 @@ Question: {question}
     return prompt
 
 def generate_summary_prompt(question, dataset):
-    prompt = f"""Given a question, and a related csv dataset, return JSON output with `plot`, `summary`.
-The summary should be 5-10 pointers long. 
-Do not simply state the data, make sure to give a high level `summary` about the performance of each group. 
-Use various emojis and friendly language.
+    prompt = f"""Given a question and a related CSV dataset, provide a JSON output containing plot and summary.
+Offer a 5-10 point deep analysis of each group's performance using vivid language and different emojis. Avoid simply stating facts.
+
 Question: {question}
 
 # start DATASET #
@@ -393,12 +392,12 @@ Question: {question}
 
 # start FORMAT #
 {{
+    "summary": text,
     "plot": {{
         type: bar or line, 
         x: column, 
         y: [columns]
     }}
-    "summary": text
 }}
 # end FORMAT #
 """
@@ -560,7 +559,7 @@ def get_new_cols(df_columns):
 #                                             Streamlit UI
 # ---------------------------------------------------------------------------------------------------------
 
-st.title(f"GCP Query")
+st.title(f"Blitz 🚀")
 if question := st.chat_input("Ask a question"):
     with st.chat_message("user"):
         st.markdown(question)
@@ -570,23 +569,35 @@ if question := st.chat_input("Ask a question"):
 
     result = DF.copy()
     model_functions = get_model_response(prompt)
-    model_functions = parse_json(model_functions)
+    try:
+        model_functions = parse_json(model_functions)
+    except Exception as e:
+        st.error(model_functions)
+        st.exception(e)
     result = execute_model_functions(result, model_functions)
 
     new_cols = get_new_cols(result.columns.tolist())
     prompt = generate_filter_prompt(question, new_cols)
 
     model_filters = get_model_response(prompt)
-    model_filters = parse_json(model_filters)
+    try:
+        model_filters = parse_json(model_filters)
+    except Exception as e:
+        st.error(model_filters)
+        st.exception(e)
     result = apply_model_filters(result, model_filters, new_cols)
 
     result_csv = data_to_csv(result.head(10))
     prompt = generate_summary_prompt(question, result_csv)
     model_summary = get_model_response(prompt)
-    model_summary = parse_json(model_summary)
+    try:
+        model_summary = parse_json(model_summary)
+    except Exception as e:
+        st.error(model_summary)
+        st.exception(e)
 
     with st.expander(label="Data", expanded=False):
-        st.dataframe(data=result, use_container_width=True, height=400)
+        st.dataframe(data=result, use_container_width=True)
 
     try:
         plot = model_summary["plot"]
