@@ -1,38 +1,75 @@
-import shutil
-import calendar
 import chromadb
 from sentence_transformers import SentenceTransformer
 from chromadb import Documents, Embeddings, EmbeddingFunction
 
-YEAR, MONTH, QUARTER, START_DATE, END_DATE, DAYS_REMAINING = [1]*6
-
-FORMULA_MAP = {
-    "Promotion (Promo) Credits": "Gross revenue - Net revenue",
-
-    "Daily Run Rate (DRR)": "Last `N` days revenue / `N` (`N`=7 & time period=current if not specified) OR Any month revenue / Number of days in the month",
-    "Monthly Run Rate (MRR)": "Last 90 days revenue / 3 OR Last 3 months revenue from `MONTH` / 3 (eg: March 2024 MRR = ([january 2024] + [february 2024] + [march 2024]) / 3)",
-
-    "Annual Run Rate (ARR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4",
-    "Incremental Run Rate (Inc ARR)": f"(total {YEAR} Q{QUARTER-1} revenue) * 4 - (total {YEAR-1} Q4 revenue) * 4",
-
-    "Year on Year (YoY)": f"(total {YEAR-1} revenue) - (total {YEAR} revenue)",
-    "Month on Month (MoM)": f"({calendar.month_name[MONTH-2]} {YEAR} revenue) - ({calendar.month_name[MONTH-1]} {YEAR} revenue)",
-
-    "Forecast/Projected revenue": f"(total {YEAR} revenue) + (last `N` days revenue / `N`) * {DAYS_REMAINING}",
-
-    "new billers": f"(total {YEAR-1} revenue) < 0 AND (total {YEAR} revenue) > 1",
-    "new billers IN `time_period`":  f"(total revenue from {START_DATE} to `time_period`) <= 0 AND (total revenue in `time_period`) >= 1",
-    "new billers IN the last `N` days": f"([total revenue from {START_DATE} to {END_DATE}] - [{YEAR} last `N` days revenue]) <= 0 AND [{YEAR} last `N` days revenue] > 0",
+FUNCTION_MAP = {
+    "promotion credits": {
+        "name": "promo",
+        "params": ["last_n_days", "month", "year"]
+    },
+    "daily run rate": {
+        "name": "drr",
+        "params": ["last_n_days", "month", "year", "rev_type"],
+    },
+    "monthly run rate": {
+        "name": "mrr",
+        "params": ["month", "year", "rev_type"]
+    },
+    "annual run rate": {
+        "name": "arr",
+        "params": ["quarter", "year", "rev_type"]
+    },
+    "incremental annual run rate": {
+        "name": "inc_arr",
+        "params": ["quarter", "year", "rev_type"],
+    },
+    "qurater to date": {
+        "name": "qtd",
+        "params": ["quarter", "year", "rev_type"]
+    },
+    "first half of year": {
+        "name": "h1",
+        "params": ["year", "rev_type"]
+    },
+    "second half of year": {
+        "name": "h2",
+        "params": ["year", "rev_type"],
+    },
+    "year to date": {
+        "name": "ytd",
+        "params": ["year", "rev_type"]
+    },
+    "year on year growth": {
+        "name": "yoy",
+        "params": ["year", "rev_type"],
+    },
+    "month on month growth": {
+        "name": "mom",
+        "params": ["month", "year", "rev_type"]
+    },
+    "forecast / projected revenue": {
+        "name": "fcst",
+        "params": ["month", "year", "last_n_days", "rev_type"]
+    },
+    "new billers or started billing/revenue": {
+        "name": "new_billers",
+        "params": ["year", "last_n_days", "month", "in_month", "after_month"]
+    }
 }
 
-CHROMA_NAME = "formulas"
+N_RESULTS = 4
+CHROMA_NAME = "functions"
 CHROMA_PATH = "./chroma_db"
-EMBED_MODEL = SentenceTransformer("./embed_model")
+EMBED_MODEL_PATH = "./embed_model"     # model: all-MiniLM-L6-v2
+EMBED_MODEL = SentenceTransformer(EMBED_MODEL_PATH)
+
+chroma_docs = [f"{key} ({vals['name']})" for key, vals in FUNCTION_MAP.items()]
+chroma_docs
 
 class CustomEmbeddingFunction(EmbeddingFunction[Documents]):
     def __call__(self, input: Documents) -> Embeddings:
         return EMBED_MODEL.encode(input).tolist()
-    
+
 def create_chroma_db(documents, path, name):
     chroma_client = chromadb.PersistentClient(path=path)
     db = chroma_client.create_collection(name=name, embedding_function=CustomEmbeddingFunction())
@@ -42,8 +79,8 @@ def create_chroma_db(documents, path, name):
     return db, name
 
 try:
-    shutil.rmtree(CHROMA_PATH)
+    chromadb.PersistentClient(path=CHROMA_PATH).delete_collection(name=CHROMA_NAME)
 except:
     pass
 
-create_chroma_db(list(FORMULA_MAP.keys()), CHROMA_PATH, CHROMA_NAME)
+create_chroma_db(chroma_docs, CHROMA_PATH, CHROMA_NAME)
