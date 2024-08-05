@@ -33,7 +33,7 @@ def promo(df, last_n_days=7, month=None, year=YEAR):
     return df
 
 def drr(df, last_n_days=7, month=None, year=YEAR, rev_type="net"):
-    if month:
+    if month and month != MONTH:
         num_days = calendar.monthrange(year, month)[1]
         df[f"{month:02d}_{year}_{rev_type}_DRR"] = df[f"{rev_type}_{month:02d}_{YEAR}"] / num_days
     else:
@@ -381,8 +381,9 @@ Question: {question}
     return prompt
 
 def generate_summary_prompt(question, dataset):
-    prompt = f"""Given a question and a related CSV dataset, provide a JSON output containing plot and summary.
+    prompt = f"""Given a question and a related CSV dataset, provide a JSON output containing `analysis` and `plot`.
 Offer a 5-10 point deep analysis of each group's performance using vivid language and different emojis. Avoid simply stating facts.
+Do not return any additional text.
 
 Question: {question}
 
@@ -392,7 +393,7 @@ Question: {question}
 
 # start FORMAT #
 {{
-    "summary": text,
+    "analysis": text,
     "plot": {{
         type: bar or line, 
         x: column, 
@@ -506,20 +507,15 @@ def apply_model_filters(df, model_filters, new_cols):
             func = groupby["func"]
             if func == "sum":
                 df = df.groupby(cols).sum()
-                df = df.rename_axis(index=cols)
             elif func == "mean":
                 df = df.groupby(cols).mean()
-                df = df.rename_axis(index=cols)
             elif func == "min":
                 df = df.groupby(cols).min()
-                df = df.rename_axis(index=cols)
             elif func == "max":
                 df = df.groupby(cols).max()
-                df = df.rename_axis(index=cols)
             elif func == "count":
                 df = df.groupby(cols).count()
-                df = df.rename_axis(index=cols)
-            # df = df.reset_index()
+            df.reset_index(inplace=True)
     except:
         pass
 
