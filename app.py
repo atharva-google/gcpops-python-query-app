@@ -1,4 +1,5 @@
 import re
+import time
 import json
 import math
 import calendar
@@ -341,6 +342,7 @@ def generate_filter_prompt(question, new_columns):
     new_columns = "\n".join([col + ": 1 or 0" if "new_biller" in col else col for col in new_columns])
 
     prompt = f"""Given a question, return JSON output with `filters`, `keep`, `groupby`, `sort`, `limit`.
+If user does not mention column specific data keep `reporting_id` and `account_name`.
 Omit any fields from output if not necessary.
 Current year: {YEAR} & current month: {MONTH}
 
@@ -385,7 +387,7 @@ Question: {question}
 
 def generate_summary_prompt(question, dataset):
     prompt = f"""Given a question and a related CSV dataset, provide a JSON output containing `analysis` and `plot`.
-Offer a 5-10 point deep analysis of each group's performance using vivid language and different emojis. Avoid simply stating facts.
+Give 5-10 point deep analysis of each group's performance using vivid language and different emojis. Avoid simply stating facts.
 Do not return any additional text.
 
 Question: {question}
@@ -567,11 +569,12 @@ def get_new_cols(df_columns):
 # ---------------------------------------------------------------------------------------------------------
 
 st.title(f"Blitz 🚀")
-data_tab, analysis_tab, graph_tab = st.tabs(["🗃 Data", "🔍 Analysis", "📈 Graph"])
 
 if question := st.chat_input("Ask a question"):
     with st.chat_message("user"):
-        st.markdown(question)
+            st.markdown(question)
+
+    data_tab, analysis_tab, graph_tab = st.tabs(["🗃 Data", "🔍 Analysis", "📈 Graph"])
 
     data_toast = st.toast("🌱 Starting Data Retrieval...")
     relevant_formulas = CHROMA_DB.query(query_texts=[question], n_results=N_RESULTS)["documents"][0]
