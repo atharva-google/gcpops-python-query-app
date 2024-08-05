@@ -199,7 +199,7 @@ def new_billers(df, year=YEAR, last_n_days=None, month=None, in_month=False, aft
 #                                              RAG setup
 # ---------------------------------------------------------------------------------------------------------
 
-N_RESULTS = 4
+N_RESULTS = 3
 CHROMA_NAME = "functions"
 CHROMA_PATH = "./chroma_db"
 EMBED_MODEL_PATH = "./embed_model"     # model: all-MiniLM-L6-v2
@@ -409,22 +409,8 @@ Question: {question}
     return prompt
 
 # ---------------------------------------------------------------------------------------------------------
-#                                            Helper Functions
+#                                         Execution Functions
 # ---------------------------------------------------------------------------------------------------------
-
-def get_model_response(prompt):
-    model = GenerativeModel(model_name=MODEL_NAME)
-    model_response = model.generate_content(prompt).text
-
-    model_response = re.sub("```json", "", model_response)
-    model_response = re.sub("```", "", model_response)
-    model_response = model_response.strip()
-
-    return model_response
-
-def parse_json(text):
-    json_obj = json.loads(text)
-    return json_obj
 
 def execute_model_functions(df, model_response):
     for func in model_response:
@@ -539,6 +525,24 @@ def apply_model_filters(df, model_filters, new_cols):
 
     return df
 
+# ---------------------------------------------------------------------------------------------------------
+#                                            Helper Functions
+# ---------------------------------------------------------------------------------------------------------
+
+def get_model_response(prompt):
+    model = GenerativeModel(model_name=MODEL_NAME)
+    model_response = model.generate_content(prompt).text
+
+    model_response = re.sub("```json", "", model_response)
+    model_response = re.sub("```", "", model_response)
+    model_response = model_response.strip()
+
+    return model_response
+
+def parse_json(text):
+    json_obj = json.loads(text)
+    return json_obj
+
 def data_to_sv(df, n_csv_rows=10):
     tsv_data = "\t".join(list(df.columns)) + "\n"
     csv_data = ",".join(list(df.columns)) + "\n"
@@ -563,28 +567,28 @@ def get_new_cols(df_columns):
 # ---------------------------------------------------------------------------------------------------------
 
 st.title(f"Blitz 🚀")
-analysis_tab, data_tab, graph_tab = st.tabs(["🔍 Analysis", "🗃 Data", "📈 Graph"])
+data_tab, analysis_tab, graph_tab = st.tabs(["🗃 Data", "🔍 Analysis", "📈 Graph"])
 
 if question := st.chat_input("Ask a question"):
     with st.chat_message("user"):
         st.markdown(question)
 
-    data_toast = st.toast("🌱 Starting Data Retrieval")
+    data_toast = st.toast("🌱 Starting Data Retrieval...")
     relevant_formulas = CHROMA_DB.query(query_texts=[question], n_results=N_RESULTS)["documents"][0]
     prompt = generate_func_prompt(question, relevant_formulas)
     model_functions = get_model_response(prompt)
-    data_toast.toast("⚙️ Got Data Functions!")
+    data_toast.toast("⚙️ Got Data Functions...")
     
     try:
         model_functions = parse_json(model_functions)
         result = DF.copy()
         result = execute_model_functions(result, model_functions)
-        data_toast.toast("📐 Completed Function Execution")
+        data_toast.toast("📐 Completed Function Execution...")
         
         new_cols = get_new_cols(result.columns.tolist())
         prompt = generate_filter_prompt(question, new_cols)
         model_filters = get_model_response(prompt)
-        data_toast.toast("🧹 Got Data Filters")
+        data_toast.toast("🧹 Got Data Filters...")
 
         try:
             model_filters = parse_json(model_filters)
@@ -592,18 +596,18 @@ if question := st.chat_input("Ask a question"):
 
             with data_tab:
                 st.dataframe(data=result, use_container_width=True)
-                data_toast.toast("🗃 Data Displayed")
+                data_toast.toast("🗃 Data Displayed!")
                 result_csv, result_tsv = data_to_sv(result)
                 st_copy_to_clipboard(result_tsv, "📋 Copy Data", "✅ Data Copied")
 
-            summary_toast = st.toast("🌱 Starting Summary Retrieval")
+            summary_toast = st.toast("🌱 Starting Summary Retrieval...")
             prompt = generate_summary_prompt(question, result_csv)
             model_summary = get_model_response(prompt)
             try:
                 model_summary = parse_json(model_summary)
                 plot = model_summary["plot"]
                 analysis = model_summary["analysis"]
-                summary_toast = st.toast("🔍 Summary and Plot Displayed")
+                summary_toast = st.toast("🔍 Summary and Plot Displayed!")
 
                 with analysis_tab:
                     st.write(analysis)
@@ -616,11 +620,29 @@ if question := st.chat_input("Ask a question"):
                     else:
                         st.warning("No plot available!")
             except Exception as e:
-                st.warning(model_summary)
-                st.exception(e)
+                with analysis_tab:
+                    st.warning(model_summary)
+                    st.exception(e)
+                with graph_tab:
+                    st.warning(model_filters)
+                    st.exception(e)
         except Exception as e:
+            with data_tab:
+                st.warning(model_filters)
+                st.exception(e)
+            with analysis_tab:
+                st.warning(model_filters)
+                st.exception(e)
+            with graph_tab:
+                st.warning(model_filters)
+                st.exception(e)
+    except Exception as e:
+        with data_tab:
             st.warning(model_filters)
             st.exception(e)
-    except Exception as e:
-        st.warning(model_functions)
-        st.exception(e)
+        with analysis_tab:
+            st.warning(model_filters)
+            st.exception(e)
+        with graph_tab:
+            st.warning(model_filters)
+            st.exception(e)
