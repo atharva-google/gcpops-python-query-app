@@ -578,7 +578,7 @@ if question := st.chat_input("Ask a question"):
 
     model_filters = get_model_response(prompt)
     model_filters = parse_json(model_filters)
-    result = apply_model_filters(result, model_filters)
+    result = apply_model_filters(result, model_filters, new_cols)
 
     result_csv = data_to_csv(result.head(10))
     prompt = generate_summary_prompt(question, result_csv)
