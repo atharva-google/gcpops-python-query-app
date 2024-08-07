@@ -3,68 +3,38 @@ from sentence_transformers import SentenceTransformer
 from chromadb import Documents, Embeddings, EmbeddingFunction
 
 FUNCTION_MAP = {
-    "promotion credits": {
-        "name": "promo",
-        "params": ["last_n_days", "month", "year"]
-    },
-    "daily run rate": {
-        "name": "drr",
-        "params": ["last_n_days", "month", "year", "rev_type"],
-    },
-    "monthly run rate": {
-        "name": "mrr",
-        "params": ["month", "year", "rev_type"]
-    },
-    "annual run rate": {
-        "name": "arr",
-        "params": ["quarter", "year", "rev_type"]
-    },
-    "incremental annual run rate": {
-        "name": "inc_arr",
-        "params": ["quarter", "year", "rev_type"],
-    },
-    "qurater to date": {
-        "name": "qtd",
-        "params": ["quarter", "year", "rev_type"]
-    },
-    "first half of year": {
-        "name": "h1",
-        "params": ["year", "rev_type"]
-    },
-    "second half of year": {
-        "name": "h2",
-        "params": ["year", "rev_type"],
-    },
-    "year to date": {
-        "name": "ytd",
-        "params": ["year", "rev_type"]
-    },
-    "year on year growth": {
-        "name": "yoy",
-        "params": ["year", "rev_type"],
-    },
-    "month on month growth": {
-        "name": "mom",
-        "params": ["month", "year", "rev_type"]
-    },
-    "forecast / projected revenue": {
-        "name": "fcst",
-        "params": ["month", "year", "last_n_days", "rev_type"]
-    },
-    "new billers or started billing/revenue": {
-        "name": "new_billers",
-        "params": ["year", "last_n_days", "month", "in_month", "after_month"]
-    }
+    # Fundamental Functions
+    'current daily run rate': {'name': 'current_drr', 'params': ['last_n_days', 'rev_type']}, 
+    'past daily run rate': {'name': 'past_drr', 'params': ['month', 'year', 'rev_type']}, 
+    'monthly run rate': {'name': 'mrr', 'params': ['month', 'year', 'rev_type']}, 
+    'annual run rate': {'name': 'arr', 'params': ['quarter', 'year', 'rev_type']}, 
+    'incremental annual run rate': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
+
+    # Custom Functions
+    'revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
+    'forecast / projected revenue': {'name': 'fcst', 'params': ['month', 'year', 'last_n_days', 'rev_type']}, 
+
+    # New Biller Functions
+    'new billers or started billing/revenue in last n days': {'name': 'new_billers_last_n_days', 'params': ['last_n_days']}, 
+    'new billers or started billing/revenue in month range': {'name': 'new_billers_month_range', 'params': ['start_month', 'start_year', 'end_month', 'end_year']}, 
+
+    # Growth Functions
+    'daily run rate growth/comparison': {'name': 'drr_growth', 'params': ['month', 'year', 'compare_month', 'compare_year', 'rev_type']},
+    'monthly run rate growth/comparison': {'name': 'mrr_growth', 'params': ['month', 'year', 'compare_month', 'compare_year', 'rev_type']},
+    'annual run rate growth/comparison': {'name': 'arr_growth', 'params': ['quarter', 'year', 'compare_quarter', 'compare_year', 'rev_type']},
+    'month on month growth/comparison': {'name': 'mom_growth', 'params': ['month', 'year', 'compare_month', 'compare_year', 'rev_type']},
+    'quarter on quarter growth/comparison': {'name': 'qoq_growth', 'params': ['quarter', 'year', 'compare_quarter', 'compare_year', 'rev_type']},
+    'first half of year growth/comparison': {'name': 'h1_growth', 'params': ['year', 'compare_year', 'rev_type']},
+    'second half of year growth/comparison': {'name': 'h2_growth', 'params': ['year', 'compare_year', 'rev_type']},
+    'year on year growth/comparison': {'name': 'yoy_growth', 'params': ['year', 'compare_year', 'rev_type']},
 }
 
-N_RESULTS = 4
 CHROMA_NAME = "functions"
 CHROMA_PATH = "./chroma_db"
 EMBED_MODEL_PATH = "./embed_model"     # model: all-MiniLM-L6-v2
 EMBED_MODEL = SentenceTransformer(EMBED_MODEL_PATH)
 
 chroma_docs = [f"{key} ({vals['name']})" for key, vals in FUNCTION_MAP.items()]
-chroma_docs
 
 class CustomEmbeddingFunction(EmbeddingFunction[Documents]):
     def __call__(self, input: Documents) -> Embeddings:
