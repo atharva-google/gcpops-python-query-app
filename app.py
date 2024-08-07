@@ -609,7 +609,7 @@ if question := st.chat_input("Ask a question"):
     data_toast = st.toast("🌱 Starting Data Retrieval...")
     relevant_formulas = CHROMA_DB.query(query_texts=[question], n_results=N_RESULTS)["documents"][0]
     prompt = generate_func_prompt(question, relevant_formulas)
-    model_functions = get_model_response(prompt)
+    model_functions = get_model_response(prompt, config=NON_CREATIVE_CONFIG)
     data_toast.toast("⚙️ Got Data Functions...")
     
     try:
@@ -621,7 +621,7 @@ if question := st.chat_input("Ask a question"):
         
         new_cols = get_new_cols(result.columns.tolist())
         prompt = generate_filter_prompt(question, new_cols)
-        model_filters = get_model_response(prompt)
+        model_filters = get_model_response(prompt, config=NON_CREATIVE_CONFIG)
         data_toast.toast("🧹 Got Data Filters...")
 
         try:
@@ -637,7 +637,7 @@ if question := st.chat_input("Ask a question"):
 
             summary_toast = st.toast("🌱 Starting Summary Retrieval...")
             prompt = generate_summary_prompt(question, result_csv)
-            model_summary = get_model_response(prompt)
+            model_summary = get_model_response(prompt, config=CREATIVE_CONFIG)
             try:
                 model_summary = parse_json(model_summary)
                 plot = model_summary["plot"]
