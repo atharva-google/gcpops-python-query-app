@@ -145,7 +145,7 @@ def revenue_gain_loss(df, month=MONTH, year=YEAR, rev_type="net"):
             prev_month = month - 1
             prev_year = year
 
-        df[f"{month:02d}_{year}_{rev_type}_revenue_gain_loss"] = df[f"{rev_type}_{month:02d}_{year}"]*2 - df[f"{rev_type}_{prev_month:02d}_{prev_year}"]
+        df[f"{month:02d}_{year}_{rev_type}_revenue_gain_loss"] = df[f"{rev_type}_{month:02d}_{year}"] - df[f"{rev_type}_{prev_month:02d}_{prev_year}"]
     return df
 
 # ----------------------------------------- New Biller Functions -----------------------------------------
@@ -532,8 +532,8 @@ def initialize_functions():
         'current daily run rate': {'name': 'current_drr', 'params': ['last_n_days', 'rev_type']}, 
         'past daily run rate': {'name': 'past_drr', 'params': ['month', 'year', 'rev_type']}, 
         'monthly run rate': {'name': 'mrr', 'params': ['month', 'year', 'rev_type']}, 
-        'annual run rate': {'name': 'arr', 'params': ['quarter', 'year', 'rev_type']}, 
-        'incremental annual run rate': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
+        'annual run rate for quarter': {'name': 'arr', 'params': ['quarter', 'year', 'rev_type']}, 
+        'incremental annual run rate for quarter': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
 
         # Custom Functions
         'revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
@@ -595,7 +595,7 @@ aiplatform.init(project=PROJECT_ID, location=LOCATION)
 #                                             Streamlit UI
 # ---------------------------------------------------------------------------------------------------------
 
-N_RESULTS = 3
+N_RESULTS = 5
 N_SUMMARY_ROWS = 10
 
 st.title(f"DataDiver 🐬")
@@ -659,7 +659,7 @@ if question := st.chat_input("Ask a question"):
                     st.warning(model_summary)
                     st.exception(e)
                 with graph_tab:
-                    st.warning(model_filters)
+                    st.warning(model_summary)
                     st.exception(e)
         except Exception as e:
             with data_tab:
@@ -673,11 +673,11 @@ if question := st.chat_input("Ask a question"):
                 st.exception(e)
     except Exception as e:
         with data_tab:
-            st.warning(model_filters)
+            st.warning(model_functions)
             st.exception(e)
         with analysis_tab:
-            st.warning(model_filters)
+            st.warning(model_functions)
             st.exception(e)
         with graph_tab:
-            st.warning(model_filters)
+            st.warning(model_functions)
             st.exception(e)

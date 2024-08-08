@@ -7,8 +7,8 @@ FUNCTION_MAP = {
     'current daily run rate': {'name': 'current_drr', 'params': ['last_n_days', 'rev_type']}, 
     'past daily run rate': {'name': 'past_drr', 'params': ['month', 'year', 'rev_type']}, 
     'monthly run rate': {'name': 'mrr', 'params': ['month', 'year', 'rev_type']}, 
-    'annual run rate': {'name': 'arr', 'params': ['quarter', 'year', 'rev_type']}, 
-    'incremental annual run rate': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
+    'annual run rate for quarter': {'name': 'arr', 'params': ['quarter', 'year', 'rev_type']}, 
+    'incremental annual run rate for quarter': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
 
     # Custom Functions
     'revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
