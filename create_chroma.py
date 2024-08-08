@@ -11,7 +11,7 @@ FUNCTION_MAP = {
     'incremental annual run rate for quarter': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
 
     # Custom Functions
-    'revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
+    'gainers / losers or revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
     'forecast / projected revenue': {'name': 'fcst', 'params': ['month', 'year', 'last_n_days', 'rev_type']}, 
 
     # New Biller Functions

@@ -145,19 +145,19 @@ def revenue_gain_loss(df, month=MONTH, year=YEAR, rev_type="net"):
             prev_month = month - 1
             prev_year = year
 
-        df[f"{month:02d}_{year}_{rev_type}_revenue_gain_loss"] = df[f"{rev_type}_{month:02d}_{year}"] - df[f"{rev_type}_{prev_month:02d}_{prev_year}"]
+        df[f"{month:02d}_{year}_{rev_type}_revenue_gain_loss"] = df[f"{rev_type}_{month:02d}_{year}"]*2 - df[f"{rev_type}_{prev_month:02d}_{prev_year}"]
     return df
 
 # ----------------------------------------- New Biller Functions -----------------------------------------
 
 def new_billers_last_n_days(df, last_n_days=7):
-    df[f"is_new_biller_in_l{last_n_days}d"] = 0
+    df[f"is_new_biller_in_l{last_n_days}d_1_or_0"] = 0
 
     df = rev_month_range(df, start_month=1, start_year=START_YEAR, end_month=12, end_year=YEAR, rev_type="net")
     df.rename(columns={f"01_{START_YEAR}_to_12_{YEAR}_net_rev": "rev_till_now"}, inplace=True)
 
     df["rev_till_now"] -= df[f"net_l{last_n_days}_{YEAR}"]
-    df.loc[(df["rev_till_now"] <= 0) & (df[f"net_l{last_n_days}_{YEAR}"] >= 1), f"is_new_biller_in_l{last_n_days}d"] = 1
+    df.loc[(df["rev_till_now"] <= 0) & (df[f"net_l{last_n_days}_{YEAR}"] >= 1), f"is_new_biller_in_l{last_n_days}d_1_or_0"] = 1
 
     df.drop(["rev_till_now", f"net_l{last_n_days}_{YEAR}"], axis=1, inplace=True)
     return df
@@ -169,8 +169,8 @@ def new_billers_month_range(df, start_month=MONTH, start_year=YEAR, end_month=MO
     df = rev_month_range(df, start_month=start_month, start_year=start_year, end_month=end_month, end_year=end_year, rev_type="net")
     df.rename(columns={f"{start_month:02d}_{start_year}_to_{end_month:02d}_{YEAR}_net_rev": f"rev_after_{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_net_rev"}, inplace=True)
 
-    df["is_new_biller"] = 0
-    df.loc[(df[f"rev_till_{start_month:02d}_{start_year}"] <= 0) & (df[f"rev_after_{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_net_rev"] >= 1), "is_new_biller"] = 1
+    df["is_new_biller_1_or_0"] = 0
+    df.loc[(df[f"rev_till_{start_month:02d}_{start_year}"] <= 0) & (df[f"rev_after_{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_net_rev"] >= 1), "is_new_biller_1_or_0"] = 1
 
     df.drop([f"rev_till_{start_month:02d}_{start_year}", f"rev_after_{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_net_rev"], axis=1, inplace=True)
     return df
@@ -295,101 +295,79 @@ def generate_func_prompt(question, functions):
     func_names = [re.sub("\(.*?\)", "", func).strip() for func in functions]
     functions_text = "\n".join([f"{key}: {FUNCTION_MAP[key]['name']}({', '.join(FUNCTION_MAP[key]['params'])})" for key in func_names])
 
-    prompt = f"""Given a question, determine optimal functions and parameters and return JSON array of function-parameter pairs.
-If question requests a range, repeat the necessary function with updated params.
-Do no include addiontal text in response.
-Current year: {YEAR} & current month: {MONTH}.
+    prompt = f"""Analyze the provided FUNCTIONS and PARAM RANGE. 
+Determine the most appropriate functions from the given list to answer the QUESTION. 
+Populate function parameters based on the QUESTION and Available Data Range. 
+Return the selected functions and their corresponding parameters in a JSON array, adhering to the specified FORMAT. 
+Do not include any additional text in response.
 
-# start PARAM INFO #
-month: 1-12
-year: 2023-2024
-last_n_days: 7, 14, 90 (default: 7)
-rev_type: net, gross (default: net)
-in_month: True, False (default: False)
-after_month: True, False (default: False)
-# end PARAM INFO #
+Available Data Range: 2023-01-01 to 2024-12-31
+Current Month Year: {MONTH} {YEAR}
 
-# start FUNCTIONS #
-last n days revenue: get_last_n_days_revenue(last_n_days, rev_type)
-month revenue: get_month_revenue(month, year, rev_type)
-revenue in month range: rev_month_range(start_month, start_year, end_month, end_year, rev_type)
-
+# FUNCTIONS #
+get_last_n_days_revenue(last_n_days, rev_type)
+get_month_revenue(month, year, rev_type)
+rev_month_range(start_month, start_year, end_month, end_year, rev_type)
 {functions_text}
-# end FUNCTIONS #
 
-# start FORMAT #
+# PARAM RANGE #
+last_n_days: [7, 14, 90]
+rev_type: ['net', 'gross']
+in_month: [True, False]
+after_month: [True, False]
+
+# FORMAT #
 [
-    [func name, {{params}}]
+  function_name(param_1=value, param_2=value, ...)
 ]
-# end FORMAT #
 
-Question: {question}
-"""
+QUESTION: {question}"""
 
     return prompt
 
 def generate_filter_prompt(question, new_columns):
-    new_columns = "\n".join([col + ": 1 or 0" if "new_biller" in col else col for col in new_columns])
+    new_columns = ", ".join(new_columns)
 
-    prompt = f"""Given a question, determine optimal data processing steps.
-Use `filters`, `keep`, `groupby`, `sort`, `limit` fields. Strictly omit unnecessary fields.
-Do not include addiontal text in response
-Current year: {YEAR} & current month: {MONTH}
+    prompt = f"""Analyze the following DATA COLUMNS: [reporting_id, account_name, micro_region, nal_cluster, nal_id, nal_name, segment, account_type, {new_columns}]
+Determine the optimal data processing steps to answer the QUESTION using the specified fields (filters, keep, groupby, sort, limit).
+Use groupby only when question requests column level/wise data.
+Omit any fields if not required.
+Output the results in the specified JSON FORMAT.
+Do not include any additional text in response.
 
-# start COLUMNS #
-reporting_id
-account_name
-micro_region
-nal_cluster
-nal_id
-nal_name
-segment
-account_type
-{new_columns}
-# end COLUMNS #
-
-# start FORMAT #
+# FORMAT #
 {{
-    "filters": [
-        [column, operator (>, <, >=, <=, ==, !=), value]
-    ],
-    "keep": [columns],
-    "groupby": {{
-        cols: [columns],
-        func: (sum, mean, min, max, count)
-    }},
-    "sort": {{"cols": [columns], "order": "asc" or "desc}}
-    "limit": number of rows
+  "filters": [[col, op (>, <, >=, <=, ==, !=), val]],
+  "keep": [cols],
+  "groupby": {{"cols": [cols], "func": func (sum, mean, min, max, count)}},
+  "sort": {{"cols": [cols], "order": order}},
+  "limit": limit
 }}
-# end FORMAT #
 
-Question: {question}
-"""
+QUESTION: {question}"""
 
     return prompt
 
 def generate_summary_prompt(question, dataset):
-    prompt = f"""Given a question and a related CSV dataset, provide a JSON output containing `analysis` and `plot`.
-Give in depth analysis in bullet points for each group's performance using vivid language and different emojis. Avoid simply stating facts.
-Do not return any additional text.
+    prompt = f"""Analyze the DATASET with QUESTION as context. 
+Provide in depth analysis in bullet point format using vivid language and emojis.
+Suggest plot type ('bar' or 'line'), x, y axes.
+Do not include any additional text in response.
 
-Question: {question}
+QUESTION: {question}
 
-# start DATASET #
+# DATASET #
 {dataset}
-# end DATASET #
 
-# start FORMAT #
+# FORMAT #
 {{
-    "analysis": text,
-    "plot": {{
-        type: bar or line,
-        x: column,
-        y: [columns]
-    }}
-}}
-# end FORMAT #
-"""
+  "analysis": str, 
+  "plot": {{
+    "type": type,
+    "x": col,
+    "y": [cols]
+  }}
+}}"""
 
     return prompt
 
@@ -442,9 +420,7 @@ def df_transpose(df, x, y):
 
 def execute_model_functions(df, model_response):
     for func in model_response:
-        func_name, params = func
-        df = eval(f"{func_name}(df, **params)")
-
+        df = eval(func[:-1] + ", df=df)")
     return df
 
 def apply_model_filters(df, model_filters, new_cols):
@@ -475,6 +451,9 @@ def apply_model_filters(df, model_filters, new_cols):
 
     try:
         keep_cols = model_filters["keep"]
+        for col in new_cols:
+            if col not in keep_cols:
+                keep_cols.append(col)
         if set(DF_COLS).intersection(set(keep_cols)):
             df = df[keep_cols]
         else:
@@ -497,12 +476,14 @@ def apply_model_filters(df, model_filters, new_cols):
 
     try:
         sort = model_filters["sort"]
-        df = df.sort_values(sort["cols"], ascending=sort["order"]=="asc")
+        if "asc" in sort["order"].lower():
+            df = df.sort_values(sort["cols"], ascending=True)
+        else:
+            df = df.sort_values(sort["cols"], ascending=False)
         print("Sorted Data")
     except:
-        rem_cols = get_new_cols(df.columns.to_list())
-        if rem_cols:
-            df.sort_values(rem_cols, ascending=False)
+        df.sort_values(new_cols, ascending=False)
+        print("Sorted Data")
 
     try:
         limit = int(model_filters["limit"])
@@ -536,7 +517,7 @@ def initialize_functions():
         'incremental annual run rate for quarter': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
 
         # Custom Functions
-        'revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
+        'gainers / losers or revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
         'forecast / projected revenue': {'name': 'fcst', 'params': ['month', 'year', 'last_n_days', 'rev_type']}, 
 
         # New Biller Functions
@@ -577,8 +558,8 @@ TABLE_ID = f"{DATASET_ID}.revenue"
 
 aiplatform.init(project=PROJECT_ID, location=LOCATION)
 
-CREATIVE_CONFIG = GenerationConfig(temperature=1, top_p=1, top_k=32)
-NON_CREATIVE_CONFIG = GenerationConfig(temperature=0, top_p=0.2, top_k=8)
+CREATIVE_CONFIG = GenerationConfig(temperature=1, top_p=0.8, top_k=16)
+NON_CREATIVE_CONFIG = GenerationConfig(temperature=0.2, top_p=0.4, top_k=8)
 
 @st.cache_data
 def initialize_data():
@@ -595,7 +576,7 @@ aiplatform.init(project=PROJECT_ID, location=LOCATION)
 #                                             Streamlit UI
 # ---------------------------------------------------------------------------------------------------------
 
-N_RESULTS = 5
+N_RESULTS = 4
 N_SUMMARY_ROWS = 10
 
 st.title(f"DataDiver 🐬")
