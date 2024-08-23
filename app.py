@@ -106,6 +106,7 @@ Knowledge:
         model_response = GenerativeModel("gemini-1.5-pro", 
                                          generation_config={"temperature": 0}
                                          ).generate_content(prompt).text
+        model_response = (model_response.replace("```sql", "").replace("```", "").strip())
     except:
         model_response = None
         # print("Error getting response from Model\n")
@@ -121,7 +122,7 @@ def QueryValidator(generated_query):
 
         return True, exec_result
     except Exception as e:
-        return False,str(e)
+        return False, str(e)
 
 def QueryDebugger(generated_query, error):
     prompt = f"""Act as a BigQuery Debugger.
@@ -139,12 +140,10 @@ Query:
 Error:
 {error}"""
 
-    try:
-        model_response = GenerativeModel("gemini-1.5-pro", 
-                                         generation_config={"temperature": 0}
-                                         ).generate_content(prompt).text
-    except:
-        model_response = None
+    model_response = GenerativeModel("gemini-1.5-pro", generation_config={"temperature": 0}).generate_content(prompt).text
+    model_response = (model_response.replace("```sql", "").replace("```", "").strip())
+    # except:
+    #     model_response = None
         # print("Error getting response from Model\n")
 
     return model_response
@@ -160,7 +159,6 @@ def QueryValidatorAndDebugger(generated_query, n_attempts=3):
         else:
             # print("Calling Debugger")
             generated_query = QueryDebugger(generated_query, validator_response[1])
-            generated_query = (generated_query.replace("```sql", "").replace("```", "").strip())
             n_attempts -= 1
 
     return False, None
@@ -229,7 +227,7 @@ if question := st.chat_input("Ask a question"):
     rf_text = "\n".join([f"{AVAILABLE_FORMULAS[fid.split(':')[1]]['name']} ({fid.split(':')[1]}):" + "\n" + "\n".join(["  " + line for line in AVAILABLE_FORMULAS[fid.split(':')[1]]['text'].split("\n")]) for fid in relevant_formulas])
 
     query = QueryWriter(question, rf_text)
-    query = (query.replace("```sql", "").replace("```", "").strip())
+    
 
     if query:
         is_valid, valid_query = QueryValidatorAndDebugger(query, n_attempts=3)
@@ -238,26 +236,28 @@ if question := st.chat_input("Ask a question"):
             try:
                 df = bq_client.query(valid_query).to_dataframe()
 
+                with data_tab:
+                    st.dataframe(df)
+
                 visualizer_response = DataVisualizer(df.columns.tolist())
                 visualizer_response = (visualizer_response.replace("```json", "").replace("```", "").strip())
                 visualizer_response = json.loads(visualizer_response)
 
                 with graph_tab:
                     if visualizer_response["chart_type"] == "bar":
-                        st.bar_chart(df.head(10), x=visualizer_response["x"], y=visualizer_response["x"])
+                        st.bar_chart(df.head(10), x=visualizer_response["x_column"], y=visualizer_response["y_columns"])
                     elif visualizer_response["chart_type"] == "line":
-                        st.line_chart(df.head(10), x=visualizer_response["x"], y=visualizer_response["y"])
+                        st.line_chart(df.head(10), x=visualizer_response["x_column"], y=visualizer_response["y_columns"])
                     else:
-                        st.warning("No plot available!")
+                        st.warning("Unknown Chart Type!")
 
                 summarizer_response = DataSummarizer(df)
 
                 with summary_tab:
                     st.write(summarizer_response)
 
-
             except Exception as e:
-                error = "Troublle geting data from BigQuery Client"
+                error = "Trouble geting data from BigQuery Client"
                 with data_tab:
                     st.error(error)
                     st.exception(e)
