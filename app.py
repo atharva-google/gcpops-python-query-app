@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 from google.cloud import bigquery
 from google.cloud import aiplatform
-from copy_to_clipboard import st_copy_to_clipboard
+# from copy_to_clipboard import st_copy_to_clipboard
 from sentence_transformers import SentenceTransformer
 from chromadb import Documents, Embeddings, EmbeddingFunction
 from vertexai.preview.generative_models import GenerativeModel, GenerationConfig
@@ -29,513 +29,51 @@ START_YEAR = 2023
 END_YEAR = 2024
 
 # ---------------------------------------------------------------------------------------------------------
-#                                             Base Functions
+#                                              GCP Setup
 # ---------------------------------------------------------------------------------------------------------
 
-def rev_month_range(df, start_month, start_year=YEAR, end_month=MONTH, end_year=YEAR, rev_type="net"):
-    df[f"{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_{rev_type}_rev"] = 0
+LOCATION = "us-central1"
+PROJECT_ID = "gcpops-427012"
+MODEL_NAME = ""
 
-    if start_year > end_year:
-        pass # start > end
-    elif start_year == end_year and start_month > end_month:
-        pass # start > end
-    else:
-        for year in range(start_year, end_year+1):
-            for month in range(1, 13):
-                if year == start_year:
-                    if month >= start_month:
-                        df[f"{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_{rev_type}_rev"] += df[f"{rev_type}_{month:02d}_{year}"]
-                else:
-                    df[f"{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_{rev_type}_rev"] += df[f"{rev_type}_{month:02d}_{year}"]
+DATASET_ID = f"{PROJECT_ID}.gcp_data"
+REVENUE_TABLE_ID = f"{DATASET_ID}.revenue"
+ACCOUNTS_TABLE_ID = f"{DATASET_ID}.accounts"
 
-                if year == end_year and month == end_month:
-                    break
-            if year == end_year:
-                break
-    return df
+DATA_SCHEMA = f"""  Dataset: {DATASET_ID}
+  Tables:
+    * {ACCOUNTS_TABLE_ID}: [account_id, name, segment, type, nal_id, nal_name, nal_cluster, micro_region]
+    * {REVENUE_TABLE_ID}: [account_id, date, net_revenue, gross_revenue]"""
 
-# ------------------------------------------ Renaming Functions ------------------------------------------
+bq_client = bigquery.Client(project=PROJECT_ID)
+bq_job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100_000_000)
 
-def get_month_revenue(df, month=MONTH, year=YEAR, rev_type="net"):
-    df[f"{month:02d}_{year}_{rev_type}_revenue"] = df[f"{rev_type}_{month:02d}_{YEAR}"]
-    return df
-
-def get_last_n_days_revenue(df, last_n_days=7, rev_type="net"):
-    df[f"last_{last_n_days}_days_{rev_type}_revenue"] = df[f"net_l{last_n_days}_{YEAR}"]
-    return df
-
-# ----------------------------------------- Fundamental Functions -----------------------------------------
-
-def current_drr(df, last_n_days=7, rev_type="net"):
-    df[f"current_l{last_n_days}d_{rev_type}_DRR"] = df[f"{rev_type}_l{last_n_days}_{YEAR}"] / last_n_days
-    return df
-
-def past_drr(df, month=MONTH, year=YEAR, rev_type="net"):
-    num_days = calendar.monthrange(year, month)[1]
-    df[f"{month:02d}_{year}_{rev_type}_DRR"] = df[f"{rev_type}_{month:02d}_{YEAR}"] / num_days
-    return df
-
-def mrr(df, month=MONTH, year=YEAR, rev_type="net"):
-    if month == MONTH and year == YEAR:
-        df[f"{MONTH:02d}_{year}_{rev_type}_MRR"] = df[f"{rev_type}_l90_{YEAR}"] / 90
-    else:
-        df[f"{month:02d}_{year}_{rev_type}_MRR"] = 0
-
-        month_count = 0
-        curr_year = year
-        curr_month = month
-        for i in range(3):
-            try:
-                df[f"{month:02d}_{year}_{rev_type}_MRR"] += df[f"{rev_type}_{curr_month:02d}_{curr_year}"]
-                curr_month -= 1
-                if curr_month == 0:
-                    curr_year -= 1
-                    curr_month = 12
-                month_count += 1
-            except:
-                break
-
-        df[f"{month:02d}_{year}_{rev_type}_MRR"] /= month_count
-        
-    return df
-
-def arr(df, quarter=QUARTER-1, year=YEAR, rev_type="net"):
-    if year == YEAR and quarter > QUARTER-1:
-        quarter = QUARTER-1
-
-    df[f"{year}_Q{quarter}_{rev_type}_ARR"] = 0
-    for month in range(quarter*3-2, quarter*3+1):
-        df[f"{year}_Q{quarter}_{rev_type}_ARR"] += df[f"{rev_type}_{month:02d}_{year}"]
-    df[f"{year}_Q{quarter}_{rev_type}_ARR"] *= 4
-    return df
-
-def inc_arr(df, quarter=QUARTER-1, year=YEAR, rev_type="net"):
-    if year == YEAR and quarter > QUARTER-1:
-        quarter = QUARTER-1
-
-    df = arr(df, year=year-1, quarter=4, rev_type=rev_type)
-    df = arr(df, quarter, rev_type=rev_type)
-    df[f"{year}_Q{quarter}_{rev_type}_Inc_ARR"] = df[f"{year}_Q{quarter}_{rev_type}_ARR"] - df[f"{year-1}_Q4_{rev_type}_ARR"]
-    df.drop([f"{year}_Q{quarter}_{rev_type}_ARR", f"{year-1}_Q4_{rev_type}_ARR"], axis=1, inplace=True)
-    return df
-
-def fcst(df, month=MONTH, year=YEAR, last_n_days=7, rev_type="net"):
-    days_remaining = (datetime.date(year, 12, 31) - datetime.date(year, month, 31)).days
-    df = rev_month_range(df, start_month=1, start_year=year, end_month=month, end_year=year, rev_type=rev_type)
-
-    if month == MONTH and year == YEAR:
-        df = current_drr(df, last_n_days=last_n_days, rev_type=rev_type)
-        df[f"{month:02d}_{year}_{rev_type}_forecast"] = df[f"01_{year}_to_{month:02d}_{year}_{rev_type}_rev"] + (df[f"current_l{last_n_days}d_{rev_type}_DRR"] * days_remaining)
-        df.drop([f"01_{year}_to_{month:02d}_{year}_{rev_type}_rev", f"current_l{last_n_days}d_{rev_type}_DRR"], axis=1, inplace=True)
-    else:
-        df = past_drr(df, month=month, year=year, rev_type=rev_type)
-        df[f"{month:02d}_{year}_{rev_type}_forecast"] = df[f"01_{year}_to_{month:02d}_{year}_{rev_type}_rev"] + (df[f"{month:02d}_{year}_{rev_type}_DRR"] * days_remaining)
-        df.drop([f"01_{year}_to_{month:02d}_{year}_{rev_type}_rev", f"{month:02d}_{year}_{rev_type}_DRR"], axis=1, inplace=True)
-
-    return df
-
-def revenue_gain_loss(df, month=MONTH, year=YEAR, rev_type="net"):
-    if month == MONTH and year == YEAR:
-        df[f"current_{rev_type}_revenue_gain_loss"] = df[f"{rev_type}_l7_{YEAR}"]*2 - df[f"{rev_type}_l14_{YEAR}"]
-    else:
-        if month == 1:
-            prev_month = 12
-            prev_year = year - 1
-        else:
-            prev_month = month - 1
-            prev_year = year
-
-        df[f"{month:02d}_{year}_{rev_type}_revenue_gain_loss"] = df[f"{rev_type}_{month:02d}_{year}"]*2 - df[f"{rev_type}_{prev_month:02d}_{prev_year}"]
-    return df
-
-# ----------------------------------------- New Biller Functions -----------------------------------------
-
-def new_billers_last_n_days(df, last_n_days=7):
-    df[f"is_new_biller_in_l{last_n_days}d_1_or_0"] = 0
-
-    df = rev_month_range(df, start_month=1, start_year=START_YEAR, end_month=12, end_year=YEAR, rev_type="net")
-    df.rename(columns={f"01_{START_YEAR}_to_12_{YEAR}_net_rev": "rev_till_now"}, inplace=True)
-
-    df["rev_till_now"] -= df[f"net_l{last_n_days}_{YEAR}"]
-    df.loc[(df["rev_till_now"] <= 0) & (df[f"net_l{last_n_days}_{YEAR}"] >= 1), f"is_new_biller_in_l{last_n_days}d_1_or_0"] = 1
-
-    df.drop(["rev_till_now", f"net_l{last_n_days}_{YEAR}"], axis=1, inplace=True)
-    return df
-
-def new_billers_month_range(df, start_month=MONTH, start_year=YEAR, end_month=MONTH, end_year=YEAR):
-    df = rev_month_range(df, start_month=1, start_year=START_YEAR, end_month=start_month, end_year=start_year, rev_type="net")
-    df.rename(columns={f"01_{START_YEAR}_to_{start_month:02d}_{start_year}_net_rev": f"rev_till_{start_month:02d}_{start_year}"}, inplace=True)
-
-    df = rev_month_range(df, start_month=start_month, start_year=start_year, end_month=end_month, end_year=end_year, rev_type="net")
-    df.rename(columns={f"{start_month:02d}_{start_year}_to_{end_month:02d}_{YEAR}_net_rev": f"rev_after_{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_net_rev"}, inplace=True)
-
-    df["is_new_biller_1_or_0"] = 0
-    df.loc[(df[f"rev_till_{start_month:02d}_{start_year}"] <= 0) & (df[f"rev_after_{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_net_rev"] >= 1), "is_new_biller_1_or_0"] = 1
-
-    df.drop([f"rev_till_{start_month:02d}_{start_year}", f"rev_after_{start_month:02d}_{start_year}_to_{end_month:02d}_{end_year}_net_rev"], axis=1, inplace=True)
-    return df
-
-# ------------------------------------------- Growth Functions -------------------------------------------
-
-def drr_growth(df, month=MONTH, year=YEAR, compare_month=MONTH-1, compare_year=YEAR, rev_type="net"):
-    if compare_month == 0:
-        compare_month = 12
-        compare_year -= 1
-    
-    if month == MONTH and year == YEAR:
-        df = current_drr(df, rev_type=rev_type)
-        df = past_drr(df, month=compare_month, year=compare_year, rev_type=rev_type)
-        df[f"current_vs_{compare_month:02d}_{compare_year}_{rev_type}_DRR_growth"] = df[f"current_l7d_{rev_type}_DRR"] - df[f"{compare_month:02d}_{compare_year}_{rev_type}_DRR"]
-        df.drop([f"current_l7d_{rev_type}_DRR", f"{compare_month:02d}_{compare_year}_{rev_type}_DRR"], axis=1, inplace=True)
-    else:
-        df = past_drr(df, month=month, year=year, rev_type=rev_type)
-        df = past_drr(df, month=compare_month, year=compare_year, rev_type=rev_type)
-        df[f"{month:02d}_{year}_vs_{compare_month:02d}_{compare_year}_{rev_type}_drr_growth"] = df[f"{month:02d}_{year}_{rev_type}_DRR"] - df[f"{compare_month:02d}_{compare_year}_{rev_type}_DRR"]
-        df.drop([f"{month:02d}_{year}_{rev_type}_DRR", f"{compare_month:02d}_{compare_year}_{rev_type}_DRR"], axis=1, inplace=True)
-    return df
-
-def mrr_growth(df, month=MONTH, year=YEAR, compare_month=MONTH-1, compare_year=YEAR, rev_type="net"):
-    if compare_month == 0:
-        compare_month = 12
-        compare_year -= 1
-    
-    df = mrr(df, month=month, year=year, rev_type=rev_type)
-    df = mrr(df, month=compare_month, year=compare_year, rev_type=rev_type)
-    df[f"{month:02d}_{year}_vs_{compare_month:02d}_{compare_year}_{rev_type}_MRR_growth"] = df[f"{month:02d}_{year}_{rev_type}_MRR"] - df[f"{compare_month:02d}_{compare_year}_{rev_type}_MRR"]
-    df.drop([f"{month:02d}_{year}_{rev_type}_MRR", f"{compare_month:02d}_{compare_year}_{rev_type}_MRR"], axis=1, inplace=True)
-    return df
-
-def arr_growth(df, quarter=QUARTER-1, year=YEAR, compare_quarter=QUARTER-2, compare_year=YEAR, rev_type="net"):
-    if compare_quarter == 0:
-        compare_quarter = 4
-        compare_year -= 1
-    
-    df = arr(df, quarter=quarter, year=year, rev_type=rev_type)
-    df = arr(df, quarter=compare_quarter, year=compare_year, rev_type=rev_type)
-    df[f"{year}_Q{quarter}_vs_{compare_year}_Q{compare_quarter}_{rev_type}_ARR_growth"] = df[f"{year}_Q{quarter}_{rev_type}_ARR"] - df[f"{compare_year}_Q{compare_quarter}_{rev_type}_ARR"]
-    df.drop([f"{year}_Q{quarter}_{rev_type}_ARR", f"{compare_year}_Q{compare_quarter}_{rev_type}_ARR"], axis=1, inplace=True)
-    return df
-
-def mom_growth(df, month=MONTH, year=YEAR, compare_month=MONTH-1, compare_year=YEAR, rev_type="net"):
-    if compare_month == 0:
-        compare_month = 12
-        compare_year -= 1
-
-    df[f"{month:02d}_{year}_vs_{compare_month:02d}_{compare_year}_{rev_type}_MoM_growth"] = df[f"{rev_type}_{month:02d}_{year}"] - df[f"{rev_type}_{compare_month:02d}_{compare_year}"]
-    return df
-
-def qoq_growth(df, quarter=QUARTER-1, year=YEAR, compare_quarter=QUARTER-2, compare_year=YEAR, rev_type="net"):
-    def qtd(df, quarter=QUARTER, year=YEAR, rev_type="net"):
-        df = rev_month_range(df, start_month=quarter*3-2, start_year=year, end_month=quarter*3, end_year=year)
-        df.rename(columns={f"{(quarter*3-2):02d}_{year}_to_{(quarter*3):02d}_{year}_{rev_type}_rev": f"{year}_Q{quarter}_{rev_type}_qtd"}, inplace=True)
-        return df
-
-    if compare_quarter == 0:
-        compare_quarter = 4
-        compare_year -= 1
-    
-    df = qtd(df, quarter=quarter, year=year, rev_type=rev_type)
-    df = qtd(df, quarter=compare_quarter, year=compare_year, rev_type=rev_type)
-
-    df[f"{year}_Q{quarter}_vs_{compare_year}_Q{compare_quarter}_{rev_type}_QoQ_growth"] = df[f"{year}_Q{quarter}_{rev_type}_qtd"] - df[f"{compare_year}_Q{compare_quarter}_{rev_type}_qtd"]
-    df.drop([f"{year}_Q{quarter}_{rev_type}_qtd", f"{compare_year}_Q{compare_quarter}_{rev_type}_qtd"], axis=1, inplace=True)
-    return df
-
-def h1_growth(df, year=YEAR, compare_year=YEAR-1, rev_type="net"):
-    def h1(df, year=YEAR, rev_type="net"):
-        df = rev_month_range(df, start_month=1, start_year=year, end_month=6, end_year=year)
-        df.rename(columns={f"01_{year}_to_06_{year}_{rev_type}_rev": f"{year}_{rev_type}_h1"}, inplace=True)
-        return df
-
-    df = h1(df, year=year)
-    df = h1(df, year=compare_year)
-    df[f"{year}_vs_{compare_year}_{rev_type}_H1_growth"] = df[f"{year}_{rev_type}_h1"] - df[f"{compare_year}_{rev_type}_h1"]
-    df.drop([f"{year}_{rev_type}_h1", f"{compare_year}_{rev_type}_h1"], axis=1, inplace=True)
-    return df
-
-def h2_growth(df, year=YEAR, compare_year=YEAR-1, rev_type="net"):
-    def h2(df, year=YEAR, rev_type="net"):
-        df = rev_month_range(df, start_month=7, start_year=year, end_month=12, end_year=year)
-        df.rename(columns={f"07_{year}_to_12_{year}_{rev_type}_rev": f"{year}_{rev_type}_h2"}, inplace=True)
-        return df
-
-    df = h2(df, year=year)
-    df = h2(df, year=compare_year)
-    df[f"{year}_vs_{compare_year}_{rev_type}_H2_growth"] = df[f"{year}_{rev_type}_h2"] - df[f"{compare_year}_{rev_type}_h2"]
-    df.drop([f"{year}_{rev_type}_h2", f"{compare_year}_{rev_type}_h2"], axis=1, inplace=True)
-    return df
-
-def yoy_growth(df, year=YEAR, compare_year=YEAR-1, rev_type="net"):
-    def h1(df, year=YEAR, rev_type="net"):
-        df = rev_month_range(df, start_month=1, start_year=year, end_month=6, end_year=year)
-        df.rename(columns={f"01_{year}_to_06_{year}_{rev_type}_rev": f"{year}_{rev_type}_h1"}, inplace=True)
-        return df
-    def h2(df, year=YEAR, rev_type="net"):
-        df = rev_month_range(df, start_month=7, start_year=year, end_month=12, end_year=year)
-        df.rename(columns={f"07_{year}_to_12_{year}_{rev_type}_rev": f"{year}_{rev_type}_h2"}, inplace=True)
-        return df
-    def ytd(df, year, rev_type="net"):
-        df = h1(df, year, rev_type=rev_type)
-        df = h2(df, year, rev_type=rev_type)
-        df[f"{year}_{rev_type}_ytd"] = df[f"{year}_{rev_type}_h1"] + df[f"{year}_{rev_type}_h2"]
-        df.drop([f"{year}_{rev_type}_h1", f"{year}_{rev_type}_h2"], axis=1, inplace=True)
-        return df
-
-    df = ytd(df, year=year, rev_type=rev_type)
-    df = ytd(df, year=compare_year, rev_type=rev_type)
-    df[f"{year}_{rev_type}_YoY_growth"] = df[f"{year}_{rev_type}_ytd"] - df[f"{compare_year}_{rev_type}_ytd"]
-    df.drop([f"{year}_{rev_type}_ytd", f"{compare_year}_{rev_type}_ytd"], axis=1, inplace=True)
-    return df
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
 
 # ---------------------------------------------------------------------------------------------------------
-#                                            Prompt Functions
+#                                             Initialize Chroma
 # ---------------------------------------------------------------------------------------------------------
 
-def generate_func_prompt(question, functions):
-    func_names = [re.sub("\(.*?\)", "", func).strip() for func in functions]
-    functions_text = "\n".join([f"{key}: {FUNCTION_MAP[key]['name']}({', '.join(FUNCTION_MAP[key]['params'])})" for key in func_names])
-
-    prompt = f"""Analyze the provided FUNCTIONS and PARAM RANGE. 
-Determine the most appropriate functions from the given list to answer the QUESTION. 
-Populate function parameters based on the QUESTION and Available Data Range. 
-Return the selected functions and their corresponding parameters in a JSON array, adhering to the specified FORMAT. 
-Do not include any additional text in response.
-
-Available Data Range: 2023-01-01 to 2024-12-31
-Current Month Year: {MONTH} {YEAR}
-
-# FUNCTIONS #
-get_last_n_days_revenue(last_n_days, rev_type)
-get_month_revenue(month, year, rev_type)
-rev_month_range(start_month, start_year, end_month, end_year, rev_type)
-{functions_text}
-
-# PARAM RANGE #
-last_n_days: [7, 14, 90]
-rev_type: ['net', 'gross']
-in_month: [True, False]
-after_month: [True, False]
-
-# FORMAT #
-[
-  function_name(param_1=value, param_2=value, ...)
-]
-
-QUESTION: {question}"""
-
-    return prompt
-
-def generate_filter_prompt(question, new_columns):
-    new_columns = ", ".join(new_columns)
-
-    prompt = f"""Analyze the following DATA COLUMNS: [reporting_id, account_name, micro_region, nal_cluster, nal_id, nal_name, segment, account_type, {new_columns}]
-Determine the optimal data processing steps to answer the QUESTION using the specified fields (filters, keep, groupby, sort, limit).
-Use groupby only when question requests column level/wise data.
-Omit any fields if not required.
-Output the results in the specified JSON FORMAT.
-Do not include any additional text in response.
-
-# FORMAT #
-{{
-  "filters": [[col, op (>, <, >=, <=, ==, !=), val]],
-  "keep": [cols],
-  "groupby": {{"cols": [cols], "func": func (sum, mean, min, max, count)}},
-  "sort": {{"cols": [cols], "order": order}},
-  "limit": limit
-}}
-
-QUESTION: {question}"""
-
-    return prompt
-
-def generate_summary_prompt(question, dataset):
-    prompt = f"""Analyze the DATASET with QUESTION as context. 
-Provide in depth analysis in bullet point format using vivid language and emojis.
-Suggest plot type ('bar' or 'line'), x, y axes.
-Do not include any additional text in response.
-
-QUESTION: {question}
-
-# DATASET #
-{dataset}
-
-# FORMAT #
-{{
-  "analysis": str, 
-  "plot": {{
-    "type": type,
-    "x": col,
-    "y": [cols]
-  }}
-}}"""
-
-    return prompt
-
-# ---------------------------------------------------------------------------------------------------------
-#                                            Helper Functions
-# ---------------------------------------------------------------------------------------------------------
-
-def get_model_response(prompt, config):
-    model = GenerativeModel(model_name=MODEL_NAME)
-    model_response = model.generate_content(prompt, generation_config=config).text
-
-    model_response = re.sub("```json", "", model_response)
-    model_response = re.sub("```", "", model_response)
-    model_response = model_response.strip()
-
-    return model_response
-
-def parse_json(text):
-    json_obj = json.loads(text)
-    return json_obj
-
-def data_to_sv(df, n_csv_rows=10):
-    tsv_data = "\t".join(list(df.columns)) + "\n"
-    csv_data = ",".join(list(df.columns)) + "\n"
-    df = df.astype(str)
-    df = df.values.tolist()
-    for row in df:
-        tsv_data += "\t".join(row) + "\n"
-        if n_csv_rows >= 0:
-            csv_data += ",".join(row) + "\n"
-            n_csv_rows -= 1
-    return csv_data, tsv_data
-
-def get_new_cols(df_columns):
-    new_cols = []
-    for col in df_columns:
-        if col not in DF_COLS:
-            new_cols.append(col)
-    return new_cols
-
-def df_transpose(df, x, y):
-    df = df[[x] + y]
-    df.set_index(x, inplace=True)
-    df = df.transpose()
-    return df
-
-# ---------------------------------------------------------------------------------------------------------
-#                                         Execution Functions
-# ---------------------------------------------------------------------------------------------------------
-
-def execute_model_functions(df, model_response):
-    for func in model_response:
-        df = eval(func[:-1] + ", df=df)")
-    return df
-
-def apply_model_filters(df, model_filters, new_cols):
-    try:
-        filters = model_filters["filters"]
-
-        for filter in filters:
-            col, opr, val = filter
-            col_dtype = str(df.dtypes[col]).lower()
-
-            if col_dtype == "object":
-                val = str(val)
-
-                df[col].fillna("", inplace=True)
-                if opr == "==":
-                    df = df[df[col].str.contains(val)]
-                elif opr == "!=":
-                    df = df[~df[col].str.contains(val)]
-            else:
-                if "int" in col_dtype:
-                    val = int(val)
-                elif "float" in col_dtype:
-                    val = float(val)
-                df = eval(f"df[df['{col}'] {str(opr)} {str(val)}]")
-        print("Filters Applied")
-    except:
-        pass
-
-    try:
-        keep_cols = model_filters["keep"]
-        for col in new_cols:
-            if col not in keep_cols:
-                keep_cols.append(col)
-        if set(DF_COLS).intersection(set(keep_cols)):
-            df = df[keep_cols]
-        else:
-            df = df[["account_name"] + keep_cols]
-        print("Removed extra columns")
-    except:
-        pass
-
-    
-    try:
-        groupby = model_filters["groupby"]
-        if groupby:
-            df = eval(f"df.groupby({groupby['cols']}).{groupby['func']}()")
-            df.reset_index(inplace=True)
-            if "index" in df.columns.tolist():
-                df = df.drop("index", axis=1)
-        print("Grouped Data")
-    except:
-        pass
-
-    try:
-        sort = model_filters["sort"]
-        if "asc" in sort["order"].lower():
-            df = df.sort_values(sort["cols"], ascending=True)
-        else:
-            df = df.sort_values(sort["cols"], ascending=False)
-        print("Sorted Data")
-    except:
-        df.sort_values(new_cols, ascending=False)
-        print("Sorted Data")
-
-    try:
-        limit = int(model_filters["limit"])
-        df = df.head(limit)
-        print("Limitted Data")
-    except:
-        pass
-
-    return df
-
-# ---------------------------------------------------------------------------------------------------------
-#                                              RAG setup
-# ---------------------------------------------------------------------------------------------------------
-
-CHROMA_NAME = "functions"
+CHROMA_NAME = "formulas"
 CHROMA_PATH = "./chroma_db"
 EMBED_MODEL_PATH = "./embed_model"     # model: all-MiniLM-L6-v2
 
 class CustomEmbeddingFunction(EmbeddingFunction[Documents]):
     def __call__(self, input: Documents) -> Embeddings:
         return EMBED_MODEL.encode(input).tolist()
-    
+
 @st.cache_data
-def initialize_functions():
-    FUNCTION_MAP = {
-        # Fundamental Functions
-        'current daily run rate': {'name': 'current_drr', 'params': ['last_n_days', 'rev_type']}, 
-        'past daily run rate': {'name': 'past_drr', 'params': ['month', 'year', 'rev_type']}, 
-        'monthly run rate': {'name': 'mrr', 'params': ['month', 'year', 'rev_type']}, 
-        'annual run rate for quarter': {'name': 'arr', 'params': ['quarter', 'year', 'rev_type']}, 
-        'incremental annual run rate for quarter': {'name': 'inc_arr', 'params': ['quarter', 'year', 'rev_type']}, 
-
-        # Custom Functions
-        'gainers / losers or revenue gained lost': {'name': 'revenue_gain_loss', 'params': ['month', 'year', 'rev_type']},
-        'forecast / projected revenue': {'name': 'fcst', 'params': ['month', 'year', 'last_n_days', 'rev_type']}, 
-
-        # New Biller Functions
-        'new billers or started billing/revenue in last n days': {'name': 'new_billers_last_n_days', 'params': ['last_n_days']}, 
-        'new billers or started billing/revenue in month range': {'name': 'new_billers_month_range', 'params': ['start_month', 'start_year', 'end_month', 'end_year']}, 
-
-        # Growth Functions
-        'daily run rate growth/comparison': {'name': 'drr_growth', 'params': ['month', 'year', 'compare_month', 'compare_year', 'rev_type']},
-        'monthly run rate growth/comparison': {'name': 'mrr_growth', 'params': ['month', 'year', 'compare_month', 'compare_year', 'rev_type']},
-        'annual run rate growth/comparison': {'name': 'arr_growth', 'params': ['quarter', 'year', 'compare_quarter', 'compare_year', 'rev_type']},
-        'month on month growth/comparison': {'name': 'mom_growth', 'params': ['month', 'year', 'compare_month', 'compare_year', 'rev_type']},
-        'quarter on quarter growth/comparison': {'name': 'qoq_growth', 'params': ['quarter', 'year', 'compare_quarter', 'compare_year', 'rev_type']},
-        'first half of year growth/comparison': {'name': 'h1_growth', 'params': ['year', 'compare_year', 'rev_type']},
-        'second half of year growth/comparison': {'name': 'h2_growth', 'params': ['year', 'compare_year', 'rev_type']},
-        'year on year growth/comparison': {'name': 'yoy_growth', 'params': ['year', 'compare_year', 'rev_type']},
+def initialize_formulas():
+    AVAILABLE_FORMULAS = {
+        "drr": {"name": "Daily Run Rate", "text": f"- current: last N days rev / N (default N = 7)\n- past month: that month's rev / days in month"},
+        "mrr": {"name": "Monthly Run Rate", "text": f"current month: last 90 days rev / 3\n- past month: last 3 months rev / 3"},
+        "arr": {"name": "Annual Run Rate", "text": f"- method: rev(Period) * Number of periods in year\n- default: Current DRR * 365"},
+        "inc arr": {"name": "Incremental Annual Run Rate", "text": f"- method: (Latest Period rev - Past Period rev) * Number of periods in year\n- explanation: rev growth between period * number of periods in year\n- default: (Current DRR - {YEAR-1} Dec DRR) * 365"},
+        "revevnue gain loss": {"name": "Revenue Gain Loss", "text": f"- formula: rev(Period X) - rev(Period X-1)\n- explanation: rev growth between two consecutive periods\n- default: current last 7 days - last 7 days prior to current last 7 days"},
+        "forecast": {"name": "Projected Revenue", "text": f"- method: (Year-to-Date rev) + rev(Period) * Number of Periods in year\n- explanation: estimated year end rev by adding the rev earned so far with a projected amount based on a given period.\n- default: ({YEAR} Year-to-Date rev) + (DRR * {DAYS_REMAINING})"},
+        # "new billers": {"name": "Get accounts that started revenue for a time period", "text": f"- criteria: check total rev from the beginning of data to just before the given period is < 1 AND total revenue after or during the given period is > 1\n- default period: last 7 days\n- example to find new billers:\n  * in june 2024: (total rev from start to may 2024) < 1 AND (total rev in june 2024) > 1\n  * after june 2024: (total rev from start to june 2024) < 1 AND (total rev from june 2024 to current date) > 1"}
     }
-
-    return FUNCTION_MAP
+    return AVAILABLE_FORMULAS
 
 @st.cache_resource
 def initialize_rag():
@@ -543,41 +81,141 @@ def initialize_rag():
     chroma_db = chromadb.PersistentClient(path=CHROMA_PATH).get_collection(name=CHROMA_NAME, embedding_function=CustomEmbeddingFunction())
     return embed_model, chroma_db
 
-FUNCTION_MAP = initialize_functions()
+AVAILABLE_FORMULAS = initialize_formulas()
 EMBED_MODEL, CHROMA_DB = initialize_rag()
- 
+
 # ---------------------------------------------------------------------------------------------------------
-#                                               GCP Setup
+#                                                  Agents
 # ---------------------------------------------------------------------------------------------------------
 
-LOCATION = "us-central1"
-PROJECT_ID = "gcpops-427012"
-MODEL_NAME = "gemini-1.5-flash"
-DATASET_ID = f"{PROJECT_ID}.gcp_core"
-TABLE_ID = f"{DATASET_ID}.revenue"
+def QueryWriter(question, knowledge):
+    prompt = f"""Write a simple BigQuery code to get data for the given question.
+Use appropriate `Data Schema` to write the code. 
+Use `Knowledge` as context. If it does have proper context, use your own thinking.
+Do not include additional text in your response.
 
-aiplatform.init(project=PROJECT_ID, location=LOCATION)
+Question: {question}
 
-CREATIVE_CONFIG = GenerationConfig(temperature=1, top_p=0.8, top_k=16)
-NON_CREATIVE_CONFIG = GenerationConfig(temperature=0.2, top_p=0.4, top_k=8)
+Data Schema:
+{DATA_SCHEMA}
 
-@st.cache_data
-def initialize_data():
-    client = bigquery.Client(project=PROJECT_ID)
-    df = client.query(f"SELECT * FROM {TABLE_ID}").to_dataframe()
-    df_cols = df.columns.tolist()
-    return df, df_cols
+Knowledge:
+{knowledge}"""
 
-## UNCOMMENT
-DF, DF_COLS = initialize_data()
-aiplatform.init(project=PROJECT_ID, location=LOCATION)
+    try:
+        model_response = GenerativeModel("gemini-1.5-pro", 
+                                         generation_config={"temperature": 0}
+                                         ).generate_content(prompt).text
+    except:
+        model_response = None
+        # print("Error getting response from Model\n")
+
+    return model_response
+
+def QueryValidator(generated_query):
+    try:
+        job_config=bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
+
+        query_job = bq_client.query(generated_query,job_config=job_config)
+        exec_result = ("This query will process {} bytes.".format(query_job.total_bytes_processed))
+
+        return True, exec_result
+    except Exception as e:
+        return False,str(e)
+
+def QueryDebugger(generated_query, error):
+    prompt = f"""Act as a BigQuery Debugger.
+Given a Query and the Error, write a new query to fix the error.
+Use appropriate `Data Schema` to write the code.
+Make sure the logic in the original query remains the same.
+Do not include additional text in your response.
+
+Data Schema:
+{DATA_SCHEMA}
+
+Query:
+{generated_query}
+
+Error:
+{error}"""
+
+    try:
+        model_response = GenerativeModel("gemini-1.5-pro", 
+                                         generation_config={"temperature": 0}
+                                         ).generate_content(prompt).text
+    except:
+        model_response = None
+        # print("Error getting response from Model\n")
+
+    return model_response
+
+def QueryValidatorAndDebugger(generated_query, n_attempts=3):
+    attempt_counter = n_attempts
+
+    while attempt_counter > 0:
+        validator_response = QueryValidator(generated_query)
+
+        if validator_response[0]:
+            return True, generated_query
+        else:
+            # print("Calling Debugger")
+            generated_query = QueryDebugger(generated_query, validator_response[1])
+            generated_query = (generated_query.replace("```sql", "").replace("```", "").strip())
+            n_attempts -= 1
+
+    return False, None
+
+def DataVisualizer(columns):
+    col_text = "[" + ", ".join(columns) + "]"
+
+    prompt = f"""Analyze the given Data columns: {col_text}
+Help me choose the right visualization to represent the data.
+Chart can be either bar or Line Chart.
+Return a JSON reponse in the following format: {{ "chart_type": "bar" or "line", "x_column": [column to plot on x-axis], "y_columns": [column(s) to plot on y-axis] }}
+Do not include additional text in your response."""
+
+    try:
+        model_response = GenerativeModel("gemini-1.5-flash", 
+                                         generation_config={"temperature": 0}
+                                         ).generate_content(prompt).text
+    except:
+        model_response = None
+        # print("Error getting response from Model\n")
+
+    return model_response
+
+def DataSummarizer(data):
+    data = data.head(100)
+    csv_data = ",".join(list(data.columns)) + "\n"
+
+    data = data.astype(str)
+    data = data.values.tolist()
+    for row in data:
+        csv_data += ",".join(row) + "\n"
+
+    prompt = f"""Analyze the given csv data and generate a bullet point summary for it.
+Do not just return data values. Give a detailed high level summary of the data.
+Use vivid language and emojis in your response.
+
+Data:
+{csv_data}"""
+
+    try:
+        model_response = GenerativeModel("gemini-1.5-flash", 
+                                         generation_config={"temperature": 1}
+                                         ).generate_content(prompt).text
+    except:
+        model_response = None
+        # print("Error getting response from Model\n")
+
+    return model_response
 
 # ---------------------------------------------------------------------------------------------------------
 #                                             Streamlit UI
 # ---------------------------------------------------------------------------------------------------------
 
-N_RESULTS = 4
-N_SUMMARY_ROWS = 10
+N_RESULTS = 2
+N_DEBUG_ATTEMPTS = 3
 
 st.title(f"DataDiver 🐬")
 
@@ -585,80 +223,63 @@ if question := st.chat_input("Ask a question"):
     with st.chat_message("user"):
             st.markdown(question)
 
-    data_tab, analysis_tab, graph_tab = st.tabs(["🗃️ Data", "🔍 Analysis", "📈 Graph"])
+    data_tab, summary_tab, graph_tab = st.tabs(["🗃️ Data", "🔍 Summary", "📈 Graph"])
 
-    data_toast = st.toast("🌱 Starting Data Retrieval...")
     relevant_formulas = CHROMA_DB.query(query_texts=[question], n_results=N_RESULTS)["documents"][0]
-    prompt = generate_func_prompt(question, relevant_formulas)
-    model_functions = get_model_response(prompt, config=NON_CREATIVE_CONFIG)
-    data_toast.toast("⚙️ Got Data Functions...")
-    
-    try:
-        model_functions = parse_json(model_functions)
+    rf_text = "\n".join([f"{AVAILABLE_FORMULAS[fid.split(':')[1]]['name']} ({fid.split(':')[1]}):" + "\n" + "\n".join(["  " + line for line in AVAILABLE_FORMULAS[fid.split(':')[1]]['text'].split("\n")]) for fid in relevant_formulas])
 
-        result = DF.copy()
-        result = execute_model_functions(result, model_functions)
-        data_toast.toast("📐 Completed Function Execution...")
-        
-        new_cols = get_new_cols(result.columns.tolist())
-        prompt = generate_filter_prompt(question, new_cols)
-        model_filters = get_model_response(prompt, config=NON_CREATIVE_CONFIG)
-        data_toast.toast("🧹 Got Data Filters...")
+    query = QueryWriter(question, rf_text)
+    query = (query.replace("```sql", "").replace("```", "").strip())
 
-        try:
-            model_filters = parse_json(model_filters)
+    if query:
+        is_valid, valid_query = QueryValidatorAndDebugger(query, n_attempts=3)
 
-            result = apply_model_filters(result, model_filters, new_cols)
-
-            with data_tab:
-                st.dataframe(data=result, use_container_width=True)
-                data_toast.toast("🗃️ Data Displayed!")
-                result_csv, result_tsv = data_to_sv(result, n_csv_rows=N_SUMMARY_ROWS)
-                st_copy_to_clipboard(result_tsv, "📋 Copy Data", "✅ Data Copied")
-
-            summary_toast = st.toast("🌱 Starting Summary Retrieval...")
-            prompt = generate_summary_prompt(question, result_csv)
-            model_summary = get_model_response(prompt, config=CREATIVE_CONFIG)
+        if is_valid:
             try:
-                model_summary = parse_json(model_summary)
-                plot = model_summary["plot"]
-                analysis = model_summary["analysis"]
-                summary_toast = st.toast("🔍 Summary and Plot Displayed!")
+                df = bq_client.query(valid_query).to_dataframe()
 
-                with analysis_tab:
-                    st.write(analysis)
+                visualizer_response = DataVisualizer(df.columns.tolist())
+                visualizer_response = (visualizer_response.replace("```json", "").replace("```", "").strip())
+                visualizer_response = json.loads(visualizer_response)
 
                 with graph_tab:
-                    if plot["type"] == "bar":
-                        st.bar_chart(result.head(N_SUMMARY_ROWS), x=plot["x"], y=plot["y"])
-                    elif plot["type"] == "line":
-                        st.line_chart(df_transpose(result.head(N_SUMMARY_ROWS), x=plot["x"], y=plot["y"]))
+                    if visualizer_response["chart_type"] == "bar":
+                        st.bar_chart(df.head(10), x=visualizer_response["x"], y=visualizer_response["x"])
+                    elif visualizer_response["chart_type"] == "line":
+                        st.line_chart(df.head(10), x=visualizer_response["x"], y=visualizer_response["y"])
                     else:
                         st.warning("No plot available!")
+
+                summarizer_response = DataSummarizer(df)
+
+                with summary_tab:
+                    st.write(summarizer_response)
+
+
             except Exception as e:
-                with analysis_tab:
-                    st.warning(model_summary)
+                error = "Troublle geting data from BigQuery Client"
+                with data_tab:
+                    st.error(error)
+                    st.exception(e)
+                with summary_tab:
+                    st.error(error)
                     st.exception(e)
                 with graph_tab:
-                    st.warning(model_summary)
+                    st.error(error)
                     st.exception(e)
-        except Exception as e:
+        else:
+            error = f"Model unable to write valid Query for the question: {question}"
             with data_tab:
-                st.warning(model_filters)
-                st.exception(e)
-            with analysis_tab:
-                st.warning(model_filters)
-                st.exception(e)
+                st.error(error)
+            with summary_tab:
+                st.error(error)
             with graph_tab:
-                st.warning(model_filters)
-                st.exception(e)
-    except Exception as e:
+                st.error(error)
+    else:
+        error = "Error getting Query from model"
         with data_tab:
-            st.warning(model_functions)
-            st.exception(e)
-        with analysis_tab:
-            st.warning(model_functions)
-            st.exception(e)
+            st.error(error)
+        with summary_tab:
+            st.error(error)
         with graph_tab:
-            st.warning(model_functions)
-            st.exception(e)
+            st.error(error)
